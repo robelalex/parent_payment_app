@@ -1,9 +1,11 @@
 // lib/screens/upload_slip_modal.dart
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;  // ✅ ADD THIS
-import 'package:shared_preferences/shared_preferences.dart';  // ✅ ADD THIS
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
 import '../models/student.dart';
 import '../models/payment.dart';
@@ -34,6 +36,7 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
   bool _isLoading = false;
   String? _error;
   bool _success = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -42,120 +45,116 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
   }
 
   Future<void> _pickImage() async {
-    final input = html.FileUploadInputElement();
-    input.accept = 'image/*';
-    input.click();
-
-    input.onChange.listen((e) {
-      final files = input.files;
-      if (files != null && files.isNotEmpty) {
-        final file = files[0];
-        final reader = html.FileReader();
-        reader.readAsDataUrl(file);
-        reader.onLoadEnd.listen((e) {
-          final dataUrl = reader.result as String;
-          setState(() {
-            _imagePreview = dataUrl;
-            // Convert data URL to Uint8List
-            final base64String = dataUrl.split(',').last;
-            _imageBytes = base64Decode(base64String);
-          });
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _imageBytes = bytes;
+          _imagePreview = String.fromCharCodes(bytes);
         });
       }
-    });
+    } catch (e) {
+      print('❌ Image pick error: $e');
+      setState(() => _error = 'Failed to pick image: $e');
+    }
   }
 
-Future<void> _submitUpload() async {
-  if (_imageBytes == null) {
-    setState(() => _error = 'Please select a bank slip image');
-    return;
-  }
-
-  setState(() {
-    _isLoading = true;
-    _error = null;
-  });
-
-  try {
-    // Get school ID from shared preferences
-    final prefs = await SharedPreferences.getInstance();
-    final schoolId = prefs.getInt('schoolId');
-    
-    print('🔍 School ID from prefs: $schoolId');
-    
-    if (schoolId == null) {
-      setState(() => _error = 'School information missing. Please logout and login again.');
-      setState(() => _isLoading = false);
+  Future<void> _submitUpload() async {
+    if (_imageBytes == null) {
+      setState(() => _error = 'Please select a bank slip image');
       return;
     }
-    
-    // Create multipart request
-    final uri = Uri.parse('${ApiService.baseUrl}/slips/upload/');
-    final request = http.MultipartRequest('POST', uri);
-    
-    // Add headers with school ID
-    request.headers.addAll({
-      'X-School-ID': schoolId.toString(),
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
     });
-    
-    // Add form fields
-    request.fields['student_id'] = widget.student.studentId;
-    request.fields['deadline_id'] = widget.payment.id.toString();
-    request.fields['amount'] = _amountController.text;
-    request.fields['bank_name'] = _bankNameController.text;
-    request.fields['uploaded_by'] = widget.student.fullName;
-    
-    // Add image file
-    final multipartFile = http.MultipartFile.fromBytes(
-      'slip_image',
-      _imageBytes!,
-      filename: 'slip_${widget.student.studentId}_${widget.payment.id}.jpg',
-    );
-    request.files.add(multipartFile);
-    
-    print('📤 Uploading slip to: $uri');
-    print('📤 Headers: X-School-ID = ${schoolId.toString()}');
-    print('📤 Student ID: ${widget.student.studentId}');
-    
-    // Send request
-    final response = await request.send();
-    final responseBody = await response.stream.bytesToString();
-    
-    print('📥 Response status: ${response.statusCode}');
-    print('📥 Response body: $responseBody');
-    
-    if (response.statusCode == 201) {
-      final responseData = jsonDecode(responseBody);
-      setState(() => _success = true);
+
+    try {
+      // Get school ID from shared preferences
+      final prefs = await SharedPreferences.getInstance();
+      final schoolId = prefs.getInt('schoolId');
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(responseData['message'] ?? 'Slip uploaded successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      print('🔍 School ID from prefs: $schoolId');
+      
+      if (schoolId == null) {
+        setState(() => _error = 'School information missing. Please logout and login again.');
+        setState(() => _isLoading = false);
+        return;
       }
       
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) {
-          widget.onSuccess();
-          Navigator.pop(context);
-        }
+      // Create multipart request
+      final uri = Uri.parse('${ApiService.baseUrl}/slips/upload/');
+      final request = http.MultipartRequest('POST', uri);
+      
+      // Add headers with school ID
+      request.headers.addAll({
+        'X-School-ID': schoolId.toString(),
       });
-    } else {
-      final errorData = jsonDecode(responseBody);
-      setState(() => _error = errorData['error'] ?? 'Upload failed');
-    }
-  } catch (e) {
-    print('❌ Upload error: $e');
-    setState(() => _error = 'Upload failed: $e');
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
+      
+      // Add form fields
+      request.fields['student_id'] = widget.student.studentId;
+      request.fields['deadline_id'] = widget.payment.id.toString();
+      request.fields['amount'] = _amountController.text;
+      request.fields['bank_name'] = _bankNameController.text;
+      request.fields['uploaded_by'] = widget.student.fullName;
+      
+      // Add image file
+      final multipartFile = http.MultipartFile.fromBytes(
+        'slip_image',
+        _imageBytes!,
+        filename: 'slip_${widget.student.studentId}_${widget.payment.id}.jpg',
+      );
+      request.files.add(multipartFile);
+      
+      print('📤 Uploading slip to: $uri');
+      print('📤 Headers: X-School-ID = ${schoolId.toString()}');
+      print('📤 Student ID: ${widget.student.studentId}');
+      
+      // Send request
+      final response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+      
+      print('📥 Response status: ${response.statusCode}');
+      print('📥 Response body: $responseBody');
+      
+      if (response.statusCode == 201) {
+        final responseData = jsonDecode(responseBody);
+        setState(() => _success = true);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(responseData['message'] ?? 'Slip uploaded successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            widget.onSuccess();
+            Navigator.pop(context);
+          }
+        });
+      } else {
+        final errorData = jsonDecode(responseBody);
+        setState(() => _error = errorData['error'] ?? 'Upload failed');
+      }
+    } catch (e) {
+      print('❌ Upload error: $e');
+      setState(() => _error = 'Upload failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
