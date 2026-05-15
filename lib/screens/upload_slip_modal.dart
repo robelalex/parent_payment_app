@@ -1,6 +1,5 @@
 // lib/screens/upload_slip_modal.dart
 import 'dart:convert';
-import 'dart:html' as html;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;  // ✅ ADD THIS
