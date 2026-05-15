@@ -1,5 +1,6 @@
 // lib/screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../models/student.dart';
 import '../models/payment.dart';
@@ -7,7 +8,6 @@ import 'login_screen.dart';
 import 'enter_student_id_screen.dart';
 import 'bank_transfer_modal.dart';
 import 'upload_slip_modal.dart';
-
 
 class DashboardScreen extends StatefulWidget {
   final int studentId;
@@ -137,14 +137,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // ignore: deprecated_member_use
-              html.window.open(url, '_blank');
+              _launchURL(url);
             },
             child: const Text('Continue'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _launchURL(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
   }
 
   int _getDaysRemaining(String? dueDate) {
@@ -231,15 +237,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Student Info Card
               _buildStudentInfoCard(),
               const SizedBox(height: 16),
-              
-              // Contact Info Card
               _buildContactInfoCard(),
               const SizedBox(height: 24),
-              
-              // Pending Payments Section
               if (_pendingPayments.isNotEmpty) ...[
                 Row(
                   children: [
@@ -255,8 +256,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ..._pendingPayments.map((payment) => _buildPaymentCard(payment)),
                 const SizedBox(height: 24),
               ],
-              
-              // Payment History Section
               if (_paymentHistory.isNotEmpty) ...[
                 Row(
                   children: [
@@ -272,8 +271,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ..._paymentHistory.map((payment) => _buildHistoryCard(payment)),
                 const SizedBox(height: 24),
               ],
-              
-              // Payment Options Footer
               _buildPaymentOptionsFooter(),
             ],
           ),
