@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'services/api_client.dart';
 import 'screens/login_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ApiClient.initialize();
+  // No DNS pre-initialization needed — OkHttp handles it natively per-request
   runApp(const MyApp());
 }
 
