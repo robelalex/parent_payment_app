@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Change from local to production
-static const String baseUrl = 'https://felege-selam-payment-system.onrender.com/api';
+static const String baseUrl = 'https://216.24.57.7/api';
   
   Future<Map<String, dynamic>> sendOtp(String email) async {
     final url = Uri.parse('$baseUrl/parent/send-otp/');
