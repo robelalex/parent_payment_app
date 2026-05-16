@@ -1,0 +1,6 @@
+-keep class io.flutter.** { *; }
+-keep class io.flutter.plugins.** { *; }
+-keep class okhttp3.** { *; }
+-dontwarn okhttp3.**
+-keep class java.net.** { *; }
+-keep class javax.net.ssl.** { *; }
