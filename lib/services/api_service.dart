@@ -1,22 +1,18 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'native_http_client.dart';
 
 class ApiService {
   static const String _base =
       'https://felege-selam-payment-system.onrender.com/api';
 
+  static const String baseUrl = _base;
+
   String? _authToken;
 
-  // Call this after login to attach the token to all subsequent requests
-  void setAuthToken(String token) {
-    _authToken = token;
-  }
-
-  void clearAuthToken() {
-    _authToken = null;
-  }
-
-  // ─── Headers ────────────────────────────────────────────────────────────────
+  void setAuthToken(String token) => _authToken = token;
+  void clearAuthToken() => _authToken = null;
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -24,97 +20,162 @@ class ApiService {
         if (_authToken != null) 'Authorization': 'Bearer $_authToken',
       };
 
-  // ─── Auth endpoints ──────────────────────────────────────────────────────────
+  // ─── Auth ─────────────────────────────────────────────────────────────────
 
-  /// Sends OTP to [email]. Returns {'success': true, 'user_id': ...}
-  /// or {'success': false, 'error': '...'} on API-level failure.
   Future<Map<String, dynamic>> sendOtp(String email) async {
-    final response = await NativeHttpClient.post(
+    final res = await NativeHttpClient.post(
       '$_base/auth/send-otp/',
       headers: _headers,
       body: {'email': email},
     );
-
-    debugPrint('[ApiService] sendOtp → ${response.statusCode}');
-
-    if (response.isSuccess) {
-      return {
-        'success': true,
-        ...?_asMap(response.json),
-      };
-    }
-
-    // Surface the server's error message if available
-    final serverError = _asMap(response.json)?['error']
-        ?? _asMap(response.json)?['detail']
-        ?? 'Failed to send OTP (${response.statusCode})';
-
-    return {'success': false, 'error': serverError};
+    debugPrint('[ApiService] sendOtp → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {
+      'success': false,
+      'error': _map(res.json)?['error'] ??
+          _map(res.json)?['detail'] ??
+          'Failed to send OTP (${res.statusCode})',
+    };
   }
 
-  /// Verifies [otp] for [email]. Returns {'success': true, 'token': '...'}
-  /// or {'success': false, 'error': '...'}.
-  Future<Map<String, dynamic>> verifyOtp(String email, String otp) async {
-    final response = await NativeHttpClient.post(
+  Future<Map<String, dynamic>> verifyOtp(dynamic userId, String otp) async {
+    final res = await NativeHttpClient.post(
       '$_base/auth/verify-otp/',
       headers: _headers,
-      body: {'email': email, 'otp': otp},
+      body: {'user_id': userId.toString(), 'otp': otp},
     );
-
-    debugPrint('[ApiService] verifyOtp → ${response.statusCode}');
-
-    if (response.isSuccess) {
-      final data = _asMap(response.json) ?? {};
-      // Persist the token for future requests
+    debugPrint('[ApiService] verifyOtp → ${res.statusCode}');
+    if (res.isSuccess) {
+      final data = _map(res.json) ?? {};
       if (data['token'] != null) setAuthToken(data['token'] as String);
       return {'success': true, ...data};
     }
+    return {
+      'success': false,
+      'error': _map(res.json)?['error'] ??
+          _map(res.json)?['detail'] ??
+          'OTP verification failed (${res.statusCode})',
+    };
+  }
 
-    final serverError = _asMap(response.json)?['error']
-        ?? _asMap(response.json)?['detail']
-        ?? 'OTP verification failed (${response.statusCode})';
+  // ─── Session ──────────────────────────────────────────────────────────────
 
-    return {'success': false, 'error': serverError};
+  Future<void> saveParentSession(String email, dynamic userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('parent_email', email);
+    await prefs.setString('parent_user_id', userId.toString());
+    if (_authToken != null) await prefs.setString('auth_token', _authToken!);
+  }
+
+  Future<Map<String, dynamic>?> getParentSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('parent_email');
+    final userId = prefs.getString('parent_user_id');
+    final token = prefs.getString('auth_token');
+    if (email == null || userId == null) return null;
+    if (token != null) setAuthToken(token);
+    return {'email': email, 'user_id': userId, 'token': token};
+  }
+
+  Future<void> clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('parent_email');
+    await prefs.remove('parent_user_id');
+    await prefs.remove('auth_token');
+    await prefs.remove('school_id');
+    await prefs.remove('selected_student');
+    clearAuthToken();
+  }
+
+  // ─── Student ──────────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getStudentById(String studentId) async {
+    if (_authToken == null) await getParentSession();
+    final res = await NativeHttpClient.get(
+      '$_base/students/$studentId/',
+      headers: _headers,
+    );
+    debugPrint('[ApiService] getStudentById → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {
+      'success': false,
+      'error': _map(res.json)?['detail'] ??
+          'Student not found (${res.statusCode})',
+    };
+  }
+
+  Future<void> saveSelectedStudent(Map<String, dynamic> student) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_student', jsonEncode(student));
+  }
+
+  Future<Map<String, dynamic>?> getSelectedStudent() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('selected_student');
+    if (raw == null) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ─── School ───────────────────────────────────────────────────────────────
+
+  Future<void> saveSchoolId(dynamic school) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('school_id', jsonEncode(school));
   }
 
   // ─── Payments ─────────────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> getPayments() async {
-    final response = await NativeHttpClient.get(
-      '$_base/payments/',
+  Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final res = await NativeHttpClient.get(
+      '$_base/payments/pending/?student_id=$studentDbId',
       headers: _headers,
     );
-
-    if (response.isSuccess) {
-      return {'success': true, 'data': response.json};
-    }
+    debugPrint('[ApiService] getPendingPayments → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json};
     return {
       'success': false,
-      'error': 'Failed to load payments (${response.statusCode})',
+      'error': 'Failed to load pending payments (${res.statusCode})',
     };
   }
 
-  Future<Map<String, dynamic>> createPayment(Map<String, dynamic> payload) async {
-    final response = await NativeHttpClient.post(
-      '$_base/payments/create/',
+  Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final res = await NativeHttpClient.get(
+      '$_base/payments/history/?student_id=$studentDbId',
+      headers: _headers,
+    );
+    debugPrint('[ApiService] getPaymentHistory → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json};
+    return {
+      'success': false,
+      'error': 'Failed to load payment history (${res.statusCode})',
+    };
+  }
+
+  Future<Map<String, dynamic>> initiatePayment(
+      Map<String, dynamic> payload) async {
+    if (_authToken == null) await getParentSession();
+    final res = await NativeHttpClient.post(
+      '$_base/payments/initiate/',
       headers: _headers,
       body: payload,
     );
-
-    if (response.isSuccess) {
-      return {'success': true, ...?_asMap(response.json)};
-    }
+    debugPrint('[ApiService] initiatePayment → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
     return {
       'success': false,
-      'error': _asMap(response.json)?['detail'] ?? 'Payment failed',
+      'error': _map(res.json)?['detail'] ??
+          'Payment initiation failed (${res.statusCode})',
     };
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────
 
-  /// Safely casts [value] to Map<String, dynamic> or returns null.
-  Map<String, dynamic>? _asMap(dynamic value) {
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return null;
-  }
+  Map<String, dynamic>? _map(dynamic v) =>
+      v is Map ? Map<String, dynamic>.from(v) : null;
 }
