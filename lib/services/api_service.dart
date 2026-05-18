@@ -140,34 +140,45 @@ class ApiService {
   }
 
   // ─── Payments ─────────────────────────────────────────────────────────────
-
-  Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
-    if (_authToken == null) await getParentSession();
-    final res = await NativeHttpClient.get(
-      '$_base/payments/pending/?student_id=$studentDbId',
-      headers: _headers,
-    );
-    debugPrint('[ApiService] getPendingPayments → ${res.statusCode}');
-    if (res.isSuccess) return {'success': true, 'data': res.json};
-    return {
-      'success': false,
-      'error': 'Failed to load pending payments (${res.statusCode})',
-    };
+Future<List<dynamic>> getPendingPayments(dynamic studentDbId) async {
+  if (_authToken == null) await getParentSession();
+  final res = await NativeHttpClient.get(
+    '$_base/payments/',
+    headers: _headers,
+  );
+  debugPrint('[ApiService] getPendingPayments → ${res.statusCode}');
+  
+  if (res.isSuccess && res.json is List) {
+    final allPayments = res.json as List;
+    // Filter payments where status is not 'verified' or 'completed'
+    final pending = allPayments.where((p) {
+      final status = p['status'] as String?;
+      return status != 'verified' && status != 'completed';
+    }).toList();
+    return pending;
   }
+  return [];
+}
 
-  Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
-    if (_authToken == null) await getParentSession();
-    final res = await NativeHttpClient.get(
-      '$_base/payments/history/?student_id=$studentDbId',
-      headers: _headers,
-    );
-    debugPrint('[ApiService] getPaymentHistory → ${res.statusCode}');
-    if (res.isSuccess) return {'success': true, 'data': res.json};
-    return {
-      'success': false,
-      'error': 'Failed to load payment history (${res.statusCode})',
-    };
+Future<List<dynamic>> getPaymentHistory(dynamic studentDbId) async {
+  if (_authToken == null) await getParentSession();
+  final res = await NativeHttpClient.get(
+    '$_base/payments/',
+    headers: _headers,
+  );
+  debugPrint('[ApiService] getPaymentHistory → ${res.statusCode}');
+  
+  if (res.isSuccess && res.json is List) {
+    final allPayments = res.json as List;
+    // Filter payments where status is 'verified' or 'completed'
+    final history = allPayments.where((p) {
+      final status = p['status'] as String?;
+      return status == 'verified' || status == 'completed';
+    }).toList();
+    return history;
   }
+  return [];
+}
 
   Future<Map<String, dynamic>> initiatePayment(
       Map<String, dynamic> payload) async {

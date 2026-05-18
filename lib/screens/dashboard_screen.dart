@@ -34,43 +34,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
 Future<void> _loadData() async {
-    setState(() { _isLoading = true; _error = null; });
+  setState(() { _isLoading = true; _error = null; });
 
-    try {
-      final savedStudent = await _apiService.getSelectedStudent();
+  try {
+    final savedStudent = await _apiService.getSelectedStudent();
 
-      if (savedStudent != null && savedStudent['id'] != null) {
-        _student = Student.fromJson(savedStudent);
+    if (savedStudent != null && savedStudent['id'] != null) {
+      _student = Student.fromJson(savedStudent);
 
-        final studentDbId = savedStudent['id'];
+      final studentDbId = savedStudent['id'];
 
-        final pendingResult = await _apiService.getPendingPayments(studentDbId);
-        final historyResult = await _apiService.getPaymentHistory(studentDbId);
+      // These now return List directly (not a Map with 'data' key)
+      final pendingList = await _apiService.getPendingPayments(studentDbId);
+      final historyList = await _apiService.getPaymentHistory(studentDbId);
 
-        // API returns {'success': true, 'data': [...]}
-        final pendingList = pendingResult['data'];
-        final historyList = historyResult['data'];
-
-        if (pendingList is List) {
-          _pendingPayments = pendingList
-              .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
-              .toList();
-        }
-
-        if (historyList is List) {
-          _paymentHistory = historyList
-              .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
-              .toList();
-        }
-      } else {
-        setState(() => _error = 'Student data not found');
+      if (pendingList is List) {
+        _pendingPayments = pendingList
+            .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+            .toList();
       }
-    } catch (e) {
-      setState(() => _error = 'Failed to load data: $e');
-    } finally {
-      setState(() => _isLoading = false);
+
+      if (historyList is List) {
+        _paymentHistory = historyList
+            .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+            .toList();
+      }
+    } else {
+      setState(() => _error = 'Student data not found');
     }
+  } catch (e) {
+    setState(() => _error = 'Failed to load data: $e');
+  } finally {
+    setState(() => _isLoading = false);
   }
+}
 
   Future<void> _makePayment(Payment payment) async {
     setState(() { _processingPaymentId = payment.id; });
