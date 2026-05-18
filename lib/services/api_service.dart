@@ -24,7 +24,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> sendOtp(String email) async {
     final res = await NativeHttpClient.post(
-      '$_base/auth/send-otp/',
+      '$_base/parent/send-otp/',
       headers: _headers,
       body: {'email': email},
     );
@@ -40,9 +40,9 @@ class ApiService {
 
   Future<Map<String, dynamic>> verifyOtp(dynamic userId, String otp) async {
     final res = await NativeHttpClient.post(
-      '$_base/auth/verify-otp/',
+      '$_base/parent/verify/',
       headers: _headers,
-      body: {'user_id': userId.toString(), 'otp': otp},
+      body: {'user_id': userId.toString(), 'otp_code': otp},
     );
     debugPrint('[ApiService] verifyOtp → ${res.statusCode}');
     if (res.isSuccess) {
