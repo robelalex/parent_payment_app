@@ -27,20 +27,23 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final response = await _apiService.sendOtp(_emailController.text);
       if (response['success'] == true) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => OtpScreen(
-              email: _emailController.text,
-              userId: response['user_id'],
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => OtpScreen(
+                email: _emailController.text,
+                userId: response['user_id'],
+              ),
             ),
-          ),
-        );
+          );
+        }
       } else {
         setState(() => _error = response['error'] ?? 'Failed to send OTP');
       }
     } catch (e) {
-      setState(() => _error = 'Network error. Please try again.');
+      // Show real error instead of generic message
+      setState(() => _error = e.toString());
     } finally {
       setState(() => _isLoading = false);
     }
@@ -91,10 +94,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       border: Border.all(color: Colors.red.shade200),
                     ),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(Icons.error, color: Colors.red.shade700, size: 20),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_error!, style: TextStyle(color: Colors.red.shade700))),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: TextStyle(color: Colors.red.shade700),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -122,7 +131,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('Send Verification Code', style: TextStyle(fontSize: 16)),
+                              Text('Send Verification Code',
+                                  style: TextStyle(fontSize: 16)),
                               SizedBox(width: 10),
                               Icon(Icons.arrow_forward),
                             ],
