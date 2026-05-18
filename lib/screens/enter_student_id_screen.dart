@@ -25,72 +25,63 @@ class _EnterStudentIdScreenState extends State<EnterStudentIdScreen> {
 
   Future<void> _loadParentSession() async {
     final session = await _apiService.getParentSession();
-    if (session['isLoggedIn'] == true) {
-      setState(() => _parentEmail = session['email']);
+    if (session != null && session['email'] != null) {
+      setState(() => _parentEmail = session['email'] as String);
     }
   }
 
-Future<void> _verifyStudentId() async {
-  final studentId = _studentIdController.text.trim().toUpperCase();
-  if (studentId.isEmpty) {
-    setState(() => _error = 'Please enter student ID');
-    return;
-  }
-
-  setState(() { _isLoading = true; _error = null; });
-
-  try {
-    final result = await _apiService.getStudentById(studentId);
-    
-    print('🔍 Student API result: $result');
-    
-    // Check if there's an error
-    if (result.containsKey('error')) {
-      setState(() => _error = result['error']);
-      setState(() => _isLoading = false);
+  Future<void> _verifyStudentId() async {
+    final studentId = _studentIdController.text.trim().toUpperCase();
+    if (studentId.isEmpty) {
+      setState(() => _error = 'Please enter student ID');
       return;
     }
-    
-    // Check if we got a valid student object (has id and parent_email)
-    if (result['id'] != null && result['parent_email'] != null) {
-      final session = await _apiService.getParentSession();
-      
-      // Verify the student belongs to this parent
-      if (result['parent_email'] != session['email']) {
-        setState(() => _error = 'This student ID is not linked to your email');
+
+    setState(() { _isLoading = true; _error = null; });
+
+    try {
+      final result = await _apiService.getStudentById(studentId);
+
+      if (result.containsKey('error') || result['success'] == false) {
+        setState(() => _error = result['error'] ?? 'Student not found');
         setState(() => _isLoading = false);
         return;
       }
-      
-      // ✅ NEW: Save the school ID
-      if (result['school'] != null) {
-        await _apiService.saveSchoolId(result['school']);
-        print('✅ Saved school ID: ${result['school']}');
-      } else {
-        print('⚠️ No school ID found in student data');
-      }
-      
-      // Save the student
-      await _apiService.saveSelectedStudent(result);
-      
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => DashboardScreen(studentId: result['id']),
-          ),
+
+      if (result['id'] != null && result['parent_email'] != null) {
+        final session = await _apiService.getParentSession();
+
+        if (session == null || result['parent_email'] != session['email']) {
+          setState(() => _error = 'This student ID is not linked to your email');
+          setState(() => _isLoading = false);
+          return;
+        }
+
+        if (result['school'] != null) {
+          await _apiService.saveSchoolId(result['school']);
+        }
+
+        await _apiService.saveSelectedStudent(
+          Map<String, dynamic>.from(result),
         );
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DashboardScreen(studentId: result['id'] as int),
+            ),
+          );
+        }
+      } else {
+        setState(() => _error = 'Student not found. Please check the ID.');
       }
-    } else {
-      setState(() => _error = 'Student not found. Please check the ID.');
+    } catch (e) {
+      setState(() => _error = 'Failed to verify student. Please try again.');
+    } finally {
+      setState(() => _isLoading = false);
     }
-  } catch (e) {
-    print('❌ Error in _verifyStudentId: $e');
-    setState(() => _error = 'Failed to verify student. Please try again.');
-  } finally {
-    setState(() => _isLoading = false);
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -151,7 +142,12 @@ Future<void> _verifyStudentId() async {
                       children: [
                         Icon(Icons.error, color: Colors.red.shade700, size: 20),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_error!, style: TextStyle(color: Colors.red.shade700))),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: TextStyle(color: Colors.red.shade700),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -179,7 +175,8 @@ Future<void> _verifyStudentId() async {
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('Access Dashboard', style: TextStyle(fontSize: 16)),
+                              Text('Access Dashboard',
+                                  style: TextStyle(fontSize: 16)),
                               SizedBox(width: 10),
                               Icon(Icons.arrow_forward),
                             ],

@@ -33,32 +33,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
+Future<void> _loadData() async {
     setState(() { _isLoading = true; _error = null; });
-    
+
     try {
       final savedStudent = await _apiService.getSelectedStudent();
-      print('📊 Saved student from localStorage: $savedStudent');
-      
+
       if (savedStudent != null && savedStudent['id'] != null) {
         _student = Student.fromJson(savedStudent);
-        
+
         final studentDbId = savedStudent['id'];
-        final pending = await _apiService.getPendingPayments(studentDbId);
-        _pendingPayments = pending.map((p) => Payment.fromJson(p)).toList();
-        
-        final history = await _apiService.getPaymentHistory(studentDbId);
-        _paymentHistory = history.map((p) => Payment.fromJson(p)).toList();
-        
-        print('✅ Student loaded: ${_student!.fullName}');
-        print('✅ Pending payments: ${_pendingPayments.length}');
-        print('✅ Payment history: ${_paymentHistory.length}');
+
+        final pendingResult = await _apiService.getPendingPayments(studentDbId);
+        final historyResult = await _apiService.getPaymentHistory(studentDbId);
+
+        // API returns {'success': true, 'data': [...]}
+        final pendingList = pendingResult['data'];
+        final historyList = historyResult['data'];
+
+        if (pendingList is List) {
+          _pendingPayments = pendingList
+              .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+              .toList();
+        }
+
+        if (historyList is List) {
+          _paymentHistory = historyList
+              .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+              .toList();
+        }
       } else {
         setState(() => _error = 'Student data not found');
       }
-      
     } catch (e) {
-      print('❌ Error loading data: $e');
       setState(() => _error = 'Failed to load data: $e');
     } finally {
       setState(() => _isLoading = false);
@@ -67,20 +74,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _makePayment(Payment payment) async {
     setState(() { _processingPaymentId = payment.id; });
-    
+
     try {
-      final result = await _apiService.initiatePayment(
-        studentId: _student!.studentId,
-        deadlineId: payment.id,
-        amount: payment.amount,
-        paidBy: _student!.parentEmail ?? 'Parent',
-        paidByPhone: _student!.parentPhone ?? '0912345678',
-      );
-      
-      print('💰 Payment result: $result');
-      
+      final result = await _apiService.initiatePayment({
+        'student_id': _student!.studentId,
+        'deadline_id': payment.id,
+        'amount': payment.amount,
+        'paid_by': _student!.parentEmail ?? 'Parent',
+        'paid_by_phone': _student!.parentPhone ?? '0912345678',
+      });
+
       if (result['checkout_url'] != null) {
-        _showPaymentDialog(result['checkout_url']);
+        _showPaymentDialog(result['checkout_url'] as String);
       } else if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Payment initiated successfully!')),
@@ -92,7 +97,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }
     } catch (e) {
-      print('❌ Payment error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Payment initiation failed')),
       );
