@@ -3,8 +3,6 @@ name: Build Flutter APK
 on:
   push:
     branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
   workflow_dispatch:
 
 jobs:
@@ -26,7 +24,6 @@ jobs:
         with:
           flutter-version: '3.29.0'
           channel: 'stable'
-          cache: true
 
       - name: Get dependencies
         run: flutter pub get
@@ -34,12 +31,8 @@ jobs:
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      - name: Find APK
-        run: find build -name "*.apk" -type f
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: build/app/outputs/flutter-release/app-release.apk
-          if-no-files-found: error
+          path: build/app/outputs/flutter-apk/*.apk
