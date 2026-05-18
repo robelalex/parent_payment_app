@@ -6,7 +6,6 @@ import io.flutter.plugin.common.MethodChannel
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -31,13 +30,14 @@ class MainActivity : FlutterActivity() {
             CHANNEL
         ).setMethodCallHandler { call, result ->
 
-            val url     = call.argument<String>("url") ?: run {
-                result.error("INVALID_ARG", "url is required", null); return@setMethodCallHandler
+            val url = call.argument<String>("url") ?: run {
+                result.error("INVALID_ARG", "url is required", null)
+                return@setMethodCallHandler
             }
             val headers = call.argument<Map<String, String>>("headers") ?: emptyMap()
-            val body    = call.argument<String>("body")
+            val body = call.argument<String>("body")
+            val bodyBytesList = call.argument<List<*>>("bodyBytes")
 
-            // Build request headers
             val requestHeaders = Headers.Builder().apply {
                 headers.forEach { (k, v) -> add(k, v) }
             }.build()
@@ -53,8 +53,21 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "POST" -> executeAsync(result) {
-                    val mediaType = "application/json; charset=utf-8".toMediaType()
-                    val requestBody = (body ?: "{}").toRequestBody(mediaType)
+                    val contentType = headers["Content-Type"]
+                        ?: "application/json; charset=utf-8"
+
+                    val requestBody = if (bodyBytesList != null) {
+                        // Multipart upload — use raw bytes
+                        val bytes = ByteArray(bodyBytesList.size) { i ->
+                            (bodyBytesList[i] as Int).toByte()
+                        }
+                        bytes.toRequestBody(contentType.toMediaType())
+                    } else {
+                        (body ?: "{}").toRequestBody(
+                            "application/json; charset=utf-8".toMediaType()
+                        )
+                    }
+
                     val request = Request.Builder()
                         .url(url)
                         .headers(requestHeaders)
@@ -64,8 +77,9 @@ class MainActivity : FlutterActivity() {
                 }
 
                 "PUT" -> executeAsync(result) {
-                    val mediaType = "application/json; charset=utf-8".toMediaType()
-                    val requestBody = (body ?: "{}").toRequestBody(mediaType)
+                    val requestBody = (body ?: "{}").toRequestBody(
+                        "application/json; charset=utf-8".toMediaType()
+                    )
                     val request = Request.Builder()
                         .url(url)
                         .headers(requestHeaders)
@@ -88,10 +102,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    /**
-     * Runs [block] on a background thread, converts the OkHttp Response
-     * into a plain Map, and sends it back to Dart — all error paths handled.
-     */
     private fun executeAsync(
         result: MethodChannel.Result,
         block: () -> Response
@@ -100,14 +110,12 @@ class MainActivity : FlutterActivity() {
             try {
                 val response = block()
                 val responseBody = response.body?.string() ?: ""
-
-                // Always return to main thread for result callbacks
                 runOnUiThread {
                     result.success(
                         mapOf(
                             "statusCode" to response.code,
-                            "body"       to responseBody,
-                            "headers"    to response.headers.toMap()
+                            "body" to responseBody,
+                            "headers" to response.headers.toMap()
                         )
                     )
                 }

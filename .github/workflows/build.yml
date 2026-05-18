@@ -28,20 +28,12 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Analyze code first
-        run: flutter analyze
-        continue-on-error: true
-
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
-        continue-on-error: true
-
-      - name: List build outputs
-        run: find build -name "*.apk" -type f 2>/dev/null || echo "No APK found"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
