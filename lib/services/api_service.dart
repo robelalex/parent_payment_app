@@ -92,11 +92,23 @@ class ApiService {
   Future<Map<String, dynamic>> getStudentById(String studentId) async {
     if (_authToken == null) await getParentSession();
     final res = await NativeHttpClient.get(
-      '$_base/students/$studentId/',
+      '$_base/students/?search=$studentId',
       headers: _headers,
     );
     debugPrint('[ApiService] getStudentById → ${res.statusCode}');
-    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    if (res.isSuccess) {
+      final list = res.json;
+      if (list is List && list.isNotEmpty) {
+        // Find exact student_id match
+        final match = list.firstWhere(
+          (s) => s['student_id']?.toString().toUpperCase() ==
+              studentId.toUpperCase(),
+          orElse: () => list.first,
+        );
+        return Map<String, dynamic>.from(match as Map);
+      }
+      return {'success': false, 'error': 'Student not found'};
+    }
     return {
       'success': false,
       'error': _map(res.json)?['detail'] ??
