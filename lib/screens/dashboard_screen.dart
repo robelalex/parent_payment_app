@@ -11,7 +11,7 @@ import 'upload_slip_modal.dart';
 
 class DashboardScreen extends StatefulWidget {
   final int studentId;
-  
+
   const DashboardScreen({super.key, required this.studentId});
 
   @override
@@ -33,44 +33,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadData();
   }
 
-Future<void> _loadData() async {
-  setState(() { _isLoading = true; _error = null; });
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
-  try {
-    final savedStudent = await _apiService.getSelectedStudent();
+    try {
+      final savedStudent = await _apiService.getSelectedStudent();
 
-    if (savedStudent != null && savedStudent['id'] != null) {
-      _student = Student.fromJson(savedStudent);
+      if (savedStudent != null && savedStudent['id'] != null) {
+        _student = Student.fromJson(savedStudent);
+        final studentDbId = savedStudent['id'];
 
-      final studentDbId = savedStudent['id'];
+        final pendingResult =
+            await _apiService.getPendingPayments(studentDbId);
+        final historyResult =
+            await _apiService.getPaymentHistory(studentDbId);
 
-      // These now return List directly (not a Map with 'data' key)
-      final pendingList = await _apiService.getPendingPayments(studentDbId);
-      final historyList = await _apiService.getPaymentHistory(studentDbId);
+        // Both methods return {'success': true, 'data': [...]}
+        final pendingRaw = pendingResult['data'];
+        final historyRaw = historyResult['data'];
 
-      if (pendingList is List) {
-        _pendingPayments = pendingList
-            .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
-            .toList();
+        if (pendingRaw is List) {
+          _pendingPayments = List<dynamic>.from(pendingRaw)
+              .map((p) =>
+                  Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+              .toList();
+        }
+
+        if (historyRaw is List) {
+          _paymentHistory = List<dynamic>.from(historyRaw)
+              .map((p) =>
+                  Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+              .toList();
+        }
+      } else {
+        setState(() => _error = 'Student data not found');
       }
-
-      if (historyList is List) {
-        _paymentHistory = historyList
-            .map((p) => Payment.fromJson(Map<String, dynamic>.from(p as Map)))
-            .toList();
-      }
-    } else {
-      setState(() => _error = 'Student data not found');
+    } catch (e) {
+      setState(() => _error = 'Failed to load data: $e');
+    } finally {
+      setState(() => _isLoading = false);
     }
-  } catch (e) {
-    setState(() => _error = 'Failed to load data: $e');
-  } finally {
-    setState(() => _isLoading = false);
   }
-}
 
   Future<void> _makePayment(Payment payment) async {
-    setState(() { _processingPaymentId = payment.id; });
+    setState(() {
+      _processingPaymentId = payment.id;
+    });
 
     try {
       final result = await _apiService.initiatePayment({
@@ -84,21 +95,30 @@ Future<void> _loadData() async {
       if (result['checkout_url'] != null) {
         _showPaymentDialog(result['checkout_url'] as String);
       } else if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment initiated successfully!')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Payment initiated successfully!')),
+          );
+        }
         _loadData();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['error'] ?? 'Payment failed')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(result['error'] ?? 'Payment failed')),
+          );
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment initiation failed')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment initiation failed')),
+        );
+      }
     } finally {
-      setState(() { _processingPaymentId = null; });
+      setState(() {
+        _processingPaymentId = null;
+      });
     }
   }
 
@@ -129,7 +149,8 @@ Future<void> _loadData() async {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Complete Payment'),
-        content: const Text('You will be redirected to complete your payment.'),
+        content:
+            const Text('You will be redirected to complete your payment.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -197,7 +218,9 @@ Future<void> _loadData() async {
                 onPressed: () {
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (context) => const EnterStudentIdScreen()),
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            const EnterStudentIdScreen()),
                   );
                 },
                 child: const Text('Back to Student ID Entry'),
@@ -222,7 +245,8 @@ Future<void> _loadData() async {
               if (mounted) {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  MaterialPageRoute(
+                      builder: (context) => const LoginScreen()),
                 );
               }
             },
@@ -245,31 +269,57 @@ Future<void> _loadData() async {
               if (_pendingPayments.isNotEmpty) ...[
                 Row(
                   children: [
-                    Icon(Icons.pending_actions, size: 20, color: Colors.orange.shade700),
+                    Icon(Icons.pending_actions,
+                        size: 20, color: Colors.orange.shade700),
                     const SizedBox(width: 8),
                     Text(
                       'Pending Payments (${_pendingPayments.length})',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                ..._pendingPayments.map((payment) => _buildPaymentCard(payment)),
+                ..._pendingPayments
+                    .map((payment) => _buildPaymentCard(payment)),
+                const SizedBox(height: 24),
+              ],
+              if (_pendingPayments.isEmpty && !_isLoading) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle,
+                          color: Colors.green.shade700),
+                      const SizedBox(width: 12),
+                      const Text('No pending payments!',
+                          style: TextStyle(fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 24),
               ],
               if (_paymentHistory.isNotEmpty) ...[
                 Row(
                   children: [
-                    Icon(Icons.history, size: 20, color: Colors.grey.shade600),
+                    Icon(Icons.history,
+                        size: 20, color: Colors.grey.shade600),
                     const SizedBox(width: 8),
                     Text(
                       'Payment History (${_paymentHistory.length})',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                ..._paymentHistory.map((payment) => _buildHistoryCard(payment)),
+                ..._paymentHistory
+                    .map((payment) => _buildHistoryCard(payment)),
                 const SizedBox(height: 24),
               ],
               _buildPaymentOptionsFooter(),
@@ -311,7 +361,8 @@ Future<void> _loadData() async {
                     ),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Icon(Icons.school, color: Colors.white, size: 28),
+                  child: const Icon(Icons.school,
+                      color: Colors.white, size: 28),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -320,15 +371,20 @@ Future<void> _loadData() async {
                     children: [
                       Text(
                         _student!.fullName,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.indigo),
+                        style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.indigo),
                       ),
                       const SizedBox(height: 4),
                       Wrap(
                         spacing: 12,
                         runSpacing: 4,
                         children: [
-                          _buildInfoChip(Icons.book, 'Grade ${_student!.grade} ${_student!.section ?? ''}'),
-                          _buildInfoChip(Icons.qr_code, 'ID: ${_student!.studentId}'),
+                          _buildInfoChip(Icons.book,
+                              'Grade ${_student!.grade} ${_student!.section ?? ''}'),
+                          _buildInfoChip(Icons.qr_code,
+                              'ID: ${_student!.studentId}'),
                         ],
                       ),
                     ],
@@ -341,10 +397,15 @@ Future<void> _loadData() async {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Monthly Tuition', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                const Text('Monthly Tuition',
+                    style:
+                        TextStyle(color: Colors.grey, fontSize: 14)),
                 Text(
                   'ETB ${_student!.monthlyFee.toStringAsFixed(0)}',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.indigo),
+                  style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.indigo),
                 ),
               ],
             ),
@@ -366,7 +427,9 @@ Future<void> _loadData() async {
         children: [
           Icon(icon, size: 12, color: Colors.indigo.shade600),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.indigo.shade700)),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11, color: Colors.indigo.shade700)),
         ],
       ),
     );
@@ -377,7 +440,12 @@ Future<void> _loadData() async {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.grey.shade200,
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -388,11 +456,16 @@ Future<void> _loadData() async {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.indigo.shade50, borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.family_restroom, size: 20, color: Colors.indigo),
+                  decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.family_restroom,
+                      size: 20, color: Colors.indigo),
                 ),
                 const SizedBox(width: 12),
-                const Text('Parent/Guardian Information', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                const Text('Parent/Guardian Information',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600)),
               ],
             ),
             const SizedBox(height: 16),
@@ -400,7 +473,10 @@ Future<void> _loadData() async {
               children: [
                 const Icon(Icons.email, size: 18, color: Colors.grey),
                 const SizedBox(width: 12),
-                Expanded(child: Text(_student!.parentEmail ?? 'Not provided', style: const TextStyle(fontSize: 14))),
+                Expanded(
+                    child: Text(
+                        _student!.parentEmail ?? 'Not provided',
+                        style: const TextStyle(fontSize: 14))),
               ],
             ),
             const SizedBox(height: 12),
@@ -408,7 +484,10 @@ Future<void> _loadData() async {
               children: [
                 const Icon(Icons.phone, size: 18, color: Colors.grey),
                 const SizedBox(width: 12),
-                Expanded(child: Text(_student!.parentPhone ?? 'Not provided', style: const TextStyle(fontSize: 14))),
+                Expanded(
+                    child: Text(
+                        _student!.parentPhone ?? 'Not provided',
+                        style: const TextStyle(fontSize: 14))),
               ],
             ),
           ],
@@ -421,15 +500,24 @@ Future<void> _loadData() async {
     final daysRemaining = _getDaysRemaining(payment.dueDate);
     final showStatus = daysRemaining <= 10;
     final isOverdue = daysRemaining <= 0;
-    final statusColor = isOverdue ? Colors.red : (daysRemaining <= 10 ? Colors.orange : Colors.grey);
-    final statusText = isOverdue ? 'Overdue' : (daysRemaining > 0 ? '$daysRemaining days reminder' : '');
+    final statusColor = isOverdue
+        ? Colors.red
+        : (daysRemaining <= 10 ? Colors.orange : Colors.grey);
+    final statusText = isOverdue
+        ? 'Overdue'
+        : (daysRemaining > 0 ? '$daysRemaining days reminder' : '');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.grey.shade100, blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.grey.shade100,
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -442,20 +530,30 @@ Future<void> _loadData() async {
                 Expanded(
                   child: Text(
                     payment.monthName ?? 'Monthly Fee',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
                 if (showStatus && statusText.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                    child: Text(statusText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: statusColor)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12)),
+                    child: Text(statusText,
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: statusColor)),
                   ),
               ],
             ),
             if (payment.dueDate != null) ...[
               const SizedBox(height: 4),
-              Text('Due: ${_formatDate(payment.dueDate!)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Text('Due: ${_formatDate(payment.dueDate!)}',
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.grey)),
             ],
             const SizedBox(height: 12),
             Row(
@@ -463,7 +561,10 @@ Future<void> _loadData() async {
               children: [
                 Text(
                   'ETB ${payment.amount.toStringAsFixed(0)}',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.red),
+                  style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red),
                 ),
                 Row(
                   children: [
@@ -514,17 +615,23 @@ Future<void> _loadData() async {
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
           elevation: 0,
         ),
         child: isLoading
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white))
             : Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(icon, size: 14, color: Colors.white),
                   const SizedBox(width: 4),
-                  Text(label, style: const TextStyle(fontSize: 12)),
+                  Text(label,
+                      style: const TextStyle(fontSize: 12)),
                 ],
               ),
       ),
@@ -542,22 +649,37 @@ Future<void> _loadData() async {
       child: ListTile(
         leading: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
-          child: Icon(Icons.receipt, size: 20, color: Colors.green.shade700),
+          decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10)),
+          child: Icon(Icons.receipt,
+              size: 20, color: Colors.green.shade700),
         ),
-        title: Text(payment.monthName ?? 'Payment', style: const TextStyle(fontWeight: FontWeight.w500)),
-        subtitle: payment.dueDate != null ? Text(_formatDate(payment.dueDate!)) : null,
+        title: Text(payment.monthName ?? 'Payment',
+            style: const TextStyle(fontWeight: FontWeight.w500)),
+        subtitle: payment.dueDate != null
+            ? Text(_formatDate(payment.dueDate!))
+            : null,
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text('ETB ${payment.amount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text('ETB ${payment.amount.toStringAsFixed(0)}',
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16)),
             if (payment.status != null)
               Container(
                 margin: const EdgeInsets.only(top: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: _getStatusColor(payment.status!).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                child: Text(payment.status!, style: TextStyle(fontSize: 10, color: _getStatusColor(payment.status!))),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                    color: _getStatusColor(payment.status!)
+                        .withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Text(payment.status!,
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: _getStatusColor(payment.status!))),
               ),
           ],
         ),
@@ -567,10 +689,16 @@ Future<void> _loadData() async {
 
   Color _getStatusColor(String status) {
     switch (status.toLowerCase()) {
-      case 'verified': case 'paid': case 'completed': return Colors.green;
-      case 'pending': return Colors.orange;
-      case 'failed': return Colors.red;
-      default: return Colors.grey;
+      case 'verified':
+      case 'paid':
+      case 'completed':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'failed':
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -590,9 +718,13 @@ Future<void> _loadData() async {
         children: [
           Row(
             children: [
-              Icon(Icons.shield, size: 18, color: Colors.indigo.shade700),
+              Icon(Icons.shield,
+                  size: 18, color: Colors.indigo.shade700),
               const SizedBox(width: 8),
-              Text('Payment Options', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.indigo.shade800)),
+              Text('Payment Options',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.indigo.shade800)),
             ],
           ),
           const SizedBox(height: 12),
@@ -602,8 +734,10 @@ Future<void> _loadData() async {
             children: [
               _buildOptionIcon(Icons.phone_android, 'Telebirr'),
               _buildOptionIcon(Icons.payment, 'Chapa'),
-              _buildOptionIcon(Icons.account_balance, 'Bank Transfer'),
-              _buildOptionIcon(Icons.upload_file, 'Bank Slip Upload'),
+              _buildOptionIcon(
+                  Icons.account_balance, 'Bank Transfer'),
+              _buildOptionIcon(
+                  Icons.upload_file, 'Bank Slip Upload'),
               _buildOptionIcon(Icons.lock, 'Secure & Encrypted'),
             ],
           ),
@@ -618,7 +752,9 @@ Future<void> _loadData() async {
       children: [
         Icon(icon, size: 14, color: Colors.indigo.shade600),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.indigo.shade700)),
+        Text(label,
+            style: TextStyle(
+                fontSize: 12, color: Colors.indigo.shade700)),
       ],
     );
   }
