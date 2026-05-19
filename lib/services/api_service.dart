@@ -10,22 +10,43 @@ class ApiService {
   static const String baseUrl = _base;
 
   String? _authToken;
+  String? _schoolId;
 
   void setAuthToken(String token) => _authToken = token;
   void clearAuthToken() => _authToken = null;
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
-      };
+  // ─── Headers with X-School-ID ─────────────────────────────────────────────
+
+  Future<Map<String, String>> get _headers async {
+    // Load school ID from prefs if not set
+    if (_schoolId == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('school_id');
+      if (raw != null) {
+        // school_id is stored as JSON e.g. "11" or 11
+        try {
+          final decoded = jsonDecode(raw);
+          _schoolId = decoded.toString().replaceAll('"', '');
+        } catch (_) {
+          _schoolId = raw.replaceAll('"', '');
+        }
+      }
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+      if (_schoolId != null) 'X-School-ID': _schoolId!,
+    };
+  }
 
   // ─── Auth ─────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> sendOtp(String email) async {
     final res = await NativeHttpClient.post(
       '$_base/parent/send-otp/',
-      headers: _headers,
+      headers: await _headers,
       body: {'email': email},
     );
     debugPrint('[ApiService] sendOtp → ${res.statusCode}');
@@ -41,7 +62,7 @@ class ApiService {
   Future<Map<String, dynamic>> verifyOtp(dynamic userId, String otp) async {
     final res = await NativeHttpClient.post(
       '$_base/parent/verify/',
-      headers: _headers,
+      headers: await _headers,
       body: {'user_id': userId.toString(), 'otp_code': otp},
     );
     debugPrint('[ApiService] verifyOtp → ${res.statusCode}');
@@ -85,6 +106,7 @@ class ApiService {
     await prefs.remove('school_id');
     await prefs.remove('selected_student');
     clearAuthToken();
+    _schoolId = null;
   }
 
   // ─── Student ──────────────────────────────────────────────────────────────
@@ -93,13 +115,12 @@ class ApiService {
     if (_authToken == null) await getParentSession();
     final res = await NativeHttpClient.get(
       '$_base/students/?search=$studentId',
-      headers: _headers,
+      headers: await _headers,
     );
     debugPrint('[ApiService] getStudentById → ${res.statusCode}');
     if (res.isSuccess) {
       final list = res.json;
       if (list is List && list.isNotEmpty) {
-        // Find exact student_id match
         final match = list.firstWhere(
           (s) => s['student_id']?.toString().toUpperCase() ==
               studentId.toUpperCase(),
@@ -136,56 +157,100 @@ class ApiService {
 
   Future<void> saveSchoolId(dynamic school) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('school_id', jsonEncode(school));
+    // school is the school ID integer from student data
+    final schoolIdStr = school.toString().replaceAll('"', '');
+    await prefs.setString('school_id', schoolIdStr);
+    _schoolId = schoolIdStr;
+    debugPrint('[ApiService] Saved school ID: $_schoolId');
   }
 
   // ─── Payments ─────────────────────────────────────────────────────────────
-Future<List<dynamic>> getPendingPayments(dynamic studentDbId) async {
-  if (_authToken == null) await getParentSession();
-  final res = await NativeHttpClient.get(
-    '$_base/payments/',
-    headers: _headers,
-  );
-  debugPrint('[ApiService] getPendingPayments → ${res.statusCode}');
-  
-  if (res.isSuccess && res.json is List) {
-    final allPayments = res.json as List;
-    // Filter payments where status is not 'verified' or 'completed'
-    final pending = allPayments.where((p) {
-      final status = p['status'] as String?;
-      return status != 'verified' && status != 'completed';
-    }).toList();
-    return pending;
-  }
-  return [];
-}
 
-Future<List<dynamic>> getPaymentHistory(dynamic studentDbId) async {
-  if (_authToken == null) await getParentSession();
-  final res = await NativeHttpClient.get(
-    '$_base/payments/',
-    headers: _headers,
-  );
-  debugPrint('[ApiService] getPaymentHistory → ${res.statusCode}');
-  
-  if (res.isSuccess && res.json is List) {
-    final allPayments = res.json as List;
-    // Filter payments where status is 'verified' or 'completed'
-    final history = allPayments.where((p) {
-      final status = p['status'] as String?;
-      return status == 'verified' || status == 'completed';
-    }).toList();
-    return history;
+  /// Pending payments = active deadlines for this student's school
+  /// that have NOT been paid yet by this student
+  Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final h = await _headers;
+    debugPrint('[ApiService] getPendingPayments headers: $h');
+
+    // Get active deadlines for this school
+    final deadlinesRes = await NativeHttpClient.get(
+      '$_base/deadlines/active_deadlines/',
+      headers: h,
+    );
+    debugPrint('[ApiService] deadlines → ${deadlinesRes.statusCode}');
+
+    // Get existing payments for this student
+    final paymentsRes = await NativeHttpClient.get(
+      '$_base/payments/?student=$studentDbId',
+      headers: h,
+    );
+    debugPrint('[ApiService] payments → ${paymentsRes.statusCode}');
+
+    if (deadlinesRes.isSuccess) {
+      final deadlines = deadlinesRes.json;
+      final payments = paymentsRes.isSuccess ? paymentsRes.json : [];
+
+      // Get deadline IDs that are already paid
+      final paidDeadlineIds = <dynamic>{};
+      if (payments is List) {
+        for (final p in payments) {
+          if (p['status'] == 'verified' || p['status'] == 'pending') {
+            paidDeadlineIds.add(p['deadline']);
+          }
+        }
+      }
+
+      // Filter out already paid deadlines
+      final pending = deadlines is List
+          ? deadlines
+              .where((d) => !paidDeadlineIds.contains(d['id']))
+              .toList()
+          : [];
+
+      return {'success': true, 'data': pending};
+    }
+
+    return {
+      'success': false,
+      'error': 'Failed to load payments (${deadlinesRes.statusCode})',
+    };
   }
-  return [];
-}
+
+  Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final h = await _headers;
+
+    final res = await NativeHttpClient.get(
+      '$_base/payments/',
+      headers: h,
+    );
+    debugPrint('[ApiService] getPaymentHistory → ${res.statusCode}');
+
+    if (res.isSuccess) {
+      final all = res.json;
+      // Filter to only this student's payments
+      final history = all is List
+          ? all
+              .where((p) =>
+                  p['student'].toString() == studentDbId.toString() ||
+                  p['student_id']?.toString() == studentDbId.toString())
+              .toList()
+          : [];
+      return {'success': true, 'data': history};
+    }
+    return {
+      'success': false,
+      'error': 'Failed to load payment history (${res.statusCode})',
+    };
+  }
 
   Future<Map<String, dynamic>> initiatePayment(
       Map<String, dynamic> payload) async {
     if (_authToken == null) await getParentSession();
     final res = await NativeHttpClient.post(
-      '$_base/payments/initiate/',
-      headers: _headers,
+      '$_base/payments/initiate_payment/',
+      headers: await _headers,
       body: payload,
     );
     debugPrint('[ApiService] initiatePayment → ${res.statusCode}');
@@ -193,6 +258,7 @@ Future<List<dynamic>> getPaymentHistory(dynamic studentDbId) async {
     return {
       'success': false,
       'error': _map(res.json)?['detail'] ??
+          _map(res.json)?['error'] ??
           'Payment initiation failed (${res.statusCode})',
     };
   }
