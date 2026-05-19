@@ -15,15 +15,11 @@ class ApiService {
   void setAuthToken(String token) => _authToken = token;
   void clearAuthToken() => _authToken = null;
 
-  // ─── Headers with X-School-ID ─────────────────────────────────────────────
-
   Future<Map<String, String>> get _headers async {
-    // Load school ID from prefs if not set
     if (_schoolId == null) {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString('school_id');
       if (raw != null) {
-        // school_id is stored as JSON e.g. "11" or 11
         try {
           final decoded = jsonDecode(raw);
           _schoolId = decoded.toString().replaceAll('"', '');
@@ -32,7 +28,6 @@ class ApiService {
         }
       }
     }
-
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -157,7 +152,6 @@ class ApiService {
 
   Future<void> saveSchoolId(dynamic school) async {
     final prefs = await SharedPreferences.getInstance();
-    // school is the school ID integer from student data
     final schoolIdStr = school.toString().replaceAll('"', '');
     await prefs.setString('school_id', schoolIdStr);
     _schoolId = schoolIdStr;
@@ -166,21 +160,17 @@ class ApiService {
 
   // ─── Payments ─────────────────────────────────────────────────────────────
 
-  /// Pending payments = active deadlines for this student's school
-  /// that have NOT been paid yet by this student
   Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
     if (_authToken == null) await getParentSession();
     final h = await _headers;
     debugPrint('[ApiService] getPendingPayments headers: $h');
 
-    // Get active deadlines for this school
     final deadlinesRes = await NativeHttpClient.get(
       '$_base/deadlines/active_deadlines/',
       headers: h,
     );
     debugPrint('[ApiService] deadlines → ${deadlinesRes.statusCode}');
 
-    // Get existing payments for this student
     final paymentsRes = await NativeHttpClient.get(
       '$_base/payments/?student=$studentDbId',
       headers: h,
@@ -191,7 +181,6 @@ class ApiService {
       final deadlines = deadlinesRes.json;
       final payments = paymentsRes.isSuccess ? paymentsRes.json : [];
 
-      // Get deadline IDs that are already paid
       final paidDeadlineIds = <dynamic>{};
       if (payments is List) {
         for (final p in payments) {
@@ -201,7 +190,6 @@ class ApiService {
         }
       }
 
-      // Filter out already paid deadlines
       final pending = deadlines is List
           ? deadlines
               .where((d) => !paidDeadlineIds.contains(d['id']))
@@ -229,7 +217,6 @@ class ApiService {
 
     if (res.isSuccess) {
       final all = res.json;
-      // Filter to only this student's payments
       final history = all is List
           ? all
               .where((p) =>

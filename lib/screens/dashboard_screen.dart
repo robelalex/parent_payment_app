@@ -51,21 +51,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final historyResult =
             await _apiService.getPaymentHistory(studentDbId);
 
-        // Both methods return {'success': true, 'data': [...]}
         final pendingRaw = pendingResult['data'];
         final historyRaw = historyResult['data'];
 
         if (pendingRaw is List) {
           _pendingPayments = List<dynamic>.from(pendingRaw)
-              .map((p) =>
-                  Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+              .map((p) => Payment.fromJson(
+                  Map<String, dynamic>.from(p as Map)))
               .toList();
         }
 
         if (historyRaw is List) {
           _paymentHistory = List<dynamic>.from(historyRaw)
-              .map((p) =>
-                  Payment.fromJson(Map<String, dynamic>.from(p as Map)))
+              .map((p) => Payment.fromJson(
+                  Map<String, dynamic>.from(p as Map)))
               .toList();
         }
       } else {
@@ -79,9 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _makePayment(Payment payment) async {
-    setState(() {
-      _processingPaymentId = payment.id;
-    });
+    setState(() => _processingPaymentId = payment.id);
 
     try {
       final result = await _apiService.initiatePayment({
@@ -97,7 +94,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else if (result['success'] == true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payment initiated successfully!')),
+            const SnackBar(
+                content: Text('Payment initiated successfully!')),
           );
         }
         _loadData();
@@ -116,9 +114,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }
     } finally {
-      setState(() {
-        _processingPaymentId = null;
-      });
+      setState(() => _processingPaymentId = null);
     }
   }
 
@@ -149,8 +145,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Complete Payment'),
-        content:
-            const Text('You will be redirected to complete your payment.'),
+        content: const Text(
+            'You will be redirected to complete your payment.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -179,8 +175,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (dueDate == null) return 0;
     try {
       final due = DateTime.parse(dueDate);
-      final today = DateTime.now();
-      return due.difference(today).inDays;
+      return due.difference(DateTime.now()).inDays;
     } catch (e) {
       return 0;
     }
@@ -215,14 +210,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Text(_error ?? 'Student not found'),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) =>
-                            const EnterStudentIdScreen()),
-                  );
-                },
+                onPressed: () => Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) =>
+                          const EnterStudentIdScreen()),
+                ),
                 child: const Text('Back to Student ID Entry'),
               ),
             ],
@@ -275,22 +268,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       'Pending Payments (${_pendingPayments.length})',
                       style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 ..._pendingPayments
-                    .map((payment) => _buildPaymentCard(payment)),
+                    .map((p) => _buildPaymentCard(p)),
                 const SizedBox(height: 24),
               ],
-              if (_pendingPayments.isEmpty && !_isLoading) ...[
+              if (_pendingPayments.isEmpty) ...[
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.green.shade50,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.shade200),
+                    border:
+                        Border.all(color: Colors.green.shade200),
                   ),
                   child: Row(
                     children: [
@@ -298,7 +293,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           color: Colors.green.shade700),
                       const SizedBox(width: 12),
                       const Text('No pending payments!',
-                          style: TextStyle(fontWeight: FontWeight.w500)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500)),
                     ],
                   ),
                 ),
@@ -313,13 +309,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     Text(
                       'Payment History (${_paymentHistory.length})',
                       style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 ..._paymentHistory
-                    .map((payment) => _buildHistoryCard(payment)),
+                    .map((p) => _buildHistoryCard(p)),
                 const SizedBox(height: 24),
               ],
               _buildPaymentOptionsFooter(),
@@ -398,8 +395,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Monthly Tuition',
-                    style:
-                        TextStyle(color: Colors.grey, fontSize: 14)),
+                    style: TextStyle(
+                        color: Colors.grey, fontSize: 14)),
                 Text(
                   'ETB ${_student!.monthlyFee.toStringAsFixed(0)}',
                   style: const TextStyle(
@@ -417,7 +414,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildInfoChip(IconData icon, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.indigo.shade50,
         borderRadius: BorderRadius.circular(12),
@@ -465,13 +463,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 12),
                 const Text('Parent/Guardian Information',
                     style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600)),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
             const SizedBox(height: 16),
             Row(
               children: [
-                const Icon(Icons.email, size: 18, color: Colors.grey),
+                const Icon(Icons.email,
+                    size: 18, color: Colors.grey),
                 const SizedBox(width: 12),
                 Expanded(
                     child: Text(
@@ -482,7 +482,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.phone, size: 18, color: Colors.grey),
+                const Icon(Icons.phone,
+                    size: 18, color: Colors.grey),
                 const SizedBox(width: 12),
                 Expanded(
                     child: Text(
@@ -498,20 +499,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildPaymentCard(Payment payment) {
     final daysRemaining = _getDaysRemaining(payment.dueDate);
-    final showStatus = daysRemaining <= 10;
-    final isOverdue = daysRemaining <= 0;
+    final isOverdue = daysRemaining < 0;
+    final isUrgent = daysRemaining >= 0 && daysRemaining <= 10;
     final statusColor = isOverdue
         ? Colors.red
-        : (daysRemaining <= 10 ? Colors.orange : Colors.grey);
+        : isUrgent
+            ? Colors.orange
+            : Colors.grey;
     final statusText = isOverdue
         ? 'Overdue'
-        : (daysRemaining > 0 ? '$daysRemaining days reminder' : '');
+        : isUrgent
+            ? '$daysRemaining days left'
+            : '';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color: isOverdue
+                ? Colors.red.shade200
+                : Colors.grey.shade200),
         boxShadow: [
           BoxShadow(
               color: Colors.grey.shade100,
@@ -524,6 +533,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -531,20 +541,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Text(
                     payment.monthName ?? 'Monthly Fee',
                     style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w600),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700),
                   ),
                 ),
-                if (showStatus && statusText.isNotEmpty)
+                if (statusText.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.1),
+                        color: statusColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(12)),
                     child: Text(statusText,
                         style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                             color: statusColor)),
                   ),
               ],
@@ -556,40 +567,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       fontSize: 12, color: Colors.grey)),
             ],
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // Amount
+            Text(
+              'ETB ${payment.amount.toStringAsFixed(0)}',
+              style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade700),
+            ),
+            const SizedBox(height: 14),
+            // Action buttons — full width, stacked for visibility
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'ETB ${payment.amount.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red),
+                ElevatedButton.icon(
+                  onPressed: _processingPaymentId == payment.id
+                      ? null
+                      : () => _makePayment(payment),
+                  icon: _processingPaymentId == payment.id
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white))
+                      : const Icon(Icons.payment,
+                          color: Colors.white, size: 18),
+                  label: Text(
+                    _processingPaymentId == payment.id
+                        ? 'Processing...'
+                        : 'Pay Now',
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo.shade700,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    elevation: 2,
+                  ),
                 ),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    _buildActionButton(
-                      icon: Icons.payment,
-                      label: 'Pay Now',
-                      color: Colors.indigo,
-                      onPressed: () => _makePayment(payment),
-                      isLoading: _processingPaymentId == payment.id,
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () =>
+                            _showBankTransfer(payment),
+                        icon: const Icon(Icons.account_balance,
+                            color: Colors.white, size: 16),
+                        label: const Text(
+                          'Bank Transfer',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal.shade600,
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(10)),
+                          elevation: 2,
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    _buildActionButton(
-                      icon: Icons.account_balance,
-                      label: 'Bank',
-                      color: Colors.blue,
-                      onPressed: () => _showBankTransfer(payment),
-                      isLoading: false,
-                    ),
-                    const SizedBox(width: 8),
-                    _buildActionButton(
-                      icon: Icons.upload_file,
-                      label: 'Slip',
-                      color: Colors.grey,
-                      onPressed: () => _showUploadSlip(payment),
-                      isLoading: false,
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showUploadSlip(payment),
+                        icon: const Icon(Icons.upload_file,
+                            color: Colors.white, size: 16),
+                        label: const Text(
+                          'Upload Slip',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade700,
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.circular(10)),
+                          elevation: 2,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -597,43 +668,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onPressed,
-    required bool isLoading,
-  }) {
-    return SizedBox(
-      height: 36,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-          elevation: 0,
-        ),
-        child: isLoading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white))
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 14, color: Colors.white),
-                  const SizedBox(width: 4),
-                  Text(label,
-                      style: const TextStyle(fontSize: 12)),
-                ],
-              ),
       ),
     );
   }
@@ -656,7 +690,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               size: 20, color: Colors.green.shade700),
         ),
         title: Text(payment.monthName ?? 'Payment',
-            style: const TextStyle(fontWeight: FontWeight.w500)),
+            style:
+                const TextStyle(fontWeight: FontWeight.w500)),
         subtitle: payment.dueDate != null
             ? Text(_formatDate(payment.dueDate!))
             : null,
@@ -666,7 +701,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Text('ETB ${payment.amount.toStringAsFixed(0)}',
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16)),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16)),
             if (payment.status != null)
               Container(
                 margin: const EdgeInsets.only(top: 4),
@@ -674,12 +710,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                     color: _getStatusColor(payment.status!)
-                        .withValues(alpha: 0.1),
+                        .withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8)),
                 child: Text(payment.status!,
                     style: TextStyle(
                         fontSize: 10,
-                        color: _getStatusColor(payment.status!))),
+                        fontWeight: FontWeight.w600,
+                        color:
+                            _getStatusColor(payment.status!))),
               ),
           ],
         ),
