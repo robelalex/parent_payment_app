@@ -10,6 +10,12 @@ class Student {
   final String? parentPhone;
   final double monthlyFee;
   
+  // ✅ NEW: Bank fields from school
+  final String? bankName;
+  final String? bankAccountNumber;
+  final String? bankAccountHolder;
+  final String? schoolName;
+  
   Student({
     required this.id,
     required this.studentId,
@@ -20,6 +26,11 @@ class Student {
     this.parentEmail,
     this.parentPhone,
     required this.monthlyFee,
+    // ✅ NEW parameters
+    this.bankName,
+    this.bankAccountNumber,
+    this.bankAccountHolder,
+    this.schoolName,
   });
   
   factory Student.fromJson(Map<String, dynamic> json) {
@@ -43,6 +54,11 @@ class Student {
       parentEmail: json['parent_email'],
       parentPhone: json['parent_phone'],
       monthlyFee: fee,
+      // ✅ NEW: Parse bank fields
+      bankName: json['bank_name'],
+      bankAccountNumber: json['bank_account_number'],
+      bankAccountHolder: json['bank_account_holder'],
+      schoolName: json['school_name'],
     );
   }
 }
