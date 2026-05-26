@@ -214,7 +214,7 @@ Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
       Map<String, dynamic> payload) async {
     if (_authToken == null) await getParentSession();
     final res = await NativeHttpClient.post(
-      '$_base/payments/initiate_payment/',
+      '$_base/chapa/test-payment/',
       headers: await _headers,
       body: payload,
     );
