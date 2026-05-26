@@ -164,12 +164,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _launchURL(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+Future<void> _launchURL(String url) async {
+  final Uri uri = Uri.parse(url);
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } else {
+    // Fallback - show error message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open payment page')),
+      );
     }
   }
+}
 
   int _getDaysRemaining(String? dueDate) {
     if (dueDate == null) return 0;
