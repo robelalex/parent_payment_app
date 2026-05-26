@@ -228,6 +228,25 @@ Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
     };
   }
 
+  Future<Map<String, dynamic>> verifyPayment(String txRef) async {
+    if (_authToken == null) await getParentSession();
+    final res = await NativeHttpClient.get(
+      '$_base/chapa/verify/?tx_ref=$txRef',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] verifyPayment → ${res.statusCode}');
+    debugPrint('[ApiService] verifyPayment response → ${res.body}');
+    
+    if (res.isSuccess) {
+      final data = _map(res.json) ?? {};
+      return {'success': true, ...data};
+    }
+    return {
+      'success': false,
+      'error': 'Payment verification failed',
+    };
+  }
+
   // ─── Utility ──────────────────────────────────────────────────────────────
 
   Map<String, dynamic>? _map(dynamic v) =>

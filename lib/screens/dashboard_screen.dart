@@ -1,6 +1,7 @@
 // lib/screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../models/student.dart';
 import '../models/payment.dart';
@@ -31,6 +32,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _checkForPaymentReturn();
   }
 
   Future<void> _loadData() async {
@@ -77,6 +79,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  Future<void> _checkForPaymentReturn() async {
+    // Wait a bit for the app to fully load
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Check if there's a pending payment that was just completed
+    final prefs = await SharedPreferences.getInstance();
+    final pendingTxRef = prefs.getString('pending_tx_ref');
+    
+    if (pendingTxRef != null) {
+      // Clear the pending reference
+      await prefs.remove('pending_tx_ref');
+      
+      // Verify the payment
+      try {
+        final result = await _apiService.verifyPayment(pendingTxRef);
+        if (result['success'] == true && result['verified'] == true) {
+          // Show success dialog
+          if (mounted) {
+            _showSuccessDialog(result);
+          }
+          // Refresh dashboard
+          _loadData();
+        }
+      } catch (e) {
+        print('Error verifying payment: $e');
+      }
+    }
+  }
+
+  void _showSuccessDialog(Map<String, dynamic> paymentData) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Payment Successful!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Amount: ETB ${paymentData['amount'] ?? '0'}'),
+            const SizedBox(height: 4),
+            Text('Student: ${paymentData['student_name'] ?? _student?.fullName ?? 'N/A'}'),
+            const SizedBox(height: 4),
+            Text('Month: ${paymentData['month'] ?? 'N/A'}'),
+            const SizedBox(height: 4),
+            Text('Transaction: ${paymentData['transaction_ref'] ?? paymentData['tx_ref'] ?? 'N/A'}'),
+            const SizedBox(height: 16),
+            const Text('Receipt has been sent to your email.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _makePayment(Payment payment) async {
     setState(() => _processingPaymentId = payment.id);
 
@@ -90,6 +160,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
 
       if (result['checkout_url'] != null) {
+        // Save the transaction reference for when user returns
+        if (result['tx_ref'] != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('pending_tx_ref', result['tx_ref']);
+        }
         _showPaymentDialog(result['checkout_url'] as String);
       } else if (result['success'] == true) {
         if (mounted) {
@@ -164,19 +239,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-Future<void> _launchURL(String url) async {
-  final Uri uri = Uri.parse(url);
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  } else {
-    // Fallback - show error message
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open payment page')),
-      );
+  Future<void> _launchURL(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      // Fallback - show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open payment page')),
+        );
+      }
     }
   }
-}
 
   int _getDaysRemaining(String? dueDate) {
     if (dueDate == null) return 0;
