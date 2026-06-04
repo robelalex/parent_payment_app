@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'services/api_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,18 +24,188 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreenWrapper(),
       },
       onGenerateRoute: (settings) {
-        if (settings.name != null && settings.name!.startsWith('/payment/success')) {
+        if (settings.name != null && settings.name!.contains('/payment/success')) {
           final uri = Uri.parse(settings.name!);
           final txRef = uri.queryParameters['tx_ref'];
           if (txRef != null) {
             return MaterialPageRoute(
-              builder: (context) => DashboardScreenWithTxRef(txRef: txRef),
+              builder: (context) => PaymentSuccessHandler(txRef: txRef),
             );
           }
         }
         return null;
       },
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+// Handler for payment success deep link
+class PaymentSuccessHandler extends StatefulWidget {
+  final String txRef;
+  const PaymentSuccessHandler({super.key, required this.txRef});
+
+  @override
+  State<PaymentSuccessHandler> createState() => _PaymentSuccessHandlerState();
+}
+
+class _PaymentSuccessHandlerState extends State<PaymentSuccessHandler> {
+  bool _isVerifying = true;
+  Map<String, dynamic>? _paymentResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _verifyAndStore();
+  }
+
+  Future<void> _verifyAndStore() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Store the tx_ref
+    await prefs.setString('pending_tx_ref', widget.txRef);
+    
+    // Verify the payment
+    try {
+      final apiService = ApiService();
+      final result = await apiService.verifyPayment(widget.txRef);
+      
+      setState(() {
+        _isVerifying = false;
+        _paymentResult = result;
+      });
+      
+      if (result['success'] == true && result['verified'] == true) {
+        if (mounted) {
+          _showSuccessDialog(result);
+        }
+      } else {
+        if (mounted) {
+          _showPendingDialog();
+        }
+      }
+    } catch (e) {
+      print('Verification error: $e');
+      setState(() => _isVerifying = false);
+      if (mounted) {
+        _showPendingDialog();
+      }
+    }
+  }
+
+  void _showSuccessDialog(Map<String, dynamic> paymentData) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Payment Successful!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Amount: ETB ${paymentData['amount'] ?? '0'}'),
+            const SizedBox(height: 4),
+            Text('Student: ${paymentData['student_name'] ?? 'N/A'}'),
+            const SizedBox(height: 4),
+            Text('Month: ${paymentData['month'] ?? 'N/A'}'),
+            const SizedBox(height: 4),
+            Text('Transaction: ${widget.txRef}'),
+            const SizedBox(height: 16),
+            const Text('Receipt has been sent to your email.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToDashboard();
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPendingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment Processing'),
+        content: const Text(
+          'Your payment is being processed. It will appear in your payment history shortly.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToDashboard();
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _navigateToDashboard() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedStudent = prefs.getString('selected_student');
+    if (savedStudent != null) {
+      try {
+        final Map<String, dynamic> student = Map<String, dynamic>.from(
+          jsonDecode(savedStudent) as Map
+        );
+        final studentId = student['id'];
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DashboardScreen(studentId: studentId),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+        }
+      }
+    } else {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              _isVerifying ? 'Verifying your payment...' : 'Please wait...',
+              style: const TextStyle(fontSize: 16),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -85,66 +256,5 @@ class _DashboardScreenWrapperState extends State<DashboardScreenWrapper> {
       return DashboardScreen(studentId: _studentId!);
     }
     return const LoginScreen();
-  }
-}
-
-class DashboardScreenWithTxRef extends StatefulWidget {
-  final String txRef;
-
-  const DashboardScreenWithTxRef({super.key, required this.txRef});
-
-  @override
-  State<DashboardScreenWithTxRef> createState() => _DashboardScreenWithTxRefState();
-}
-
-class _DashboardScreenWithTxRefState extends State<DashboardScreenWithTxRef> {
-  @override
-  void initState() {
-    super.initState();
-    _storeTxRefAndNavigate();
-  }
-
-  Future<void> _storeTxRefAndNavigate() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_tx_ref', widget.txRef);
-    
-    final savedStudent = prefs.getString('selected_student');
-    if (savedStudent != null) {
-      try {
-        final Map<String, dynamic> student = Map<String, dynamic>.from(
-          jsonDecode(savedStudent) as Map
-        );
-        final studentId = student['id'];
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => DashboardScreen(studentId: studentId),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-          );
-        }
-      }
-    } else {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
   }
 }
