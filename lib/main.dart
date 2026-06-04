@@ -24,15 +24,27 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreenWrapper(),
       },
       onGenerateRoute: (settings) {
-        if (settings.name != null && settings.name!.contains('/payment/success')) {
+        print('🔍 DEEP LINK RECEIVED: ${settings.name}');
+        
+        // Handle deep link: parentpay://payment/success?tx_ref=xxx
+        if (settings.name != null && settings.name!.contains('payment/success')) {
           final uri = Uri.parse(settings.name!);
           final txRef = uri.queryParameters['tx_ref'];
-          if (txRef != null) {
+          print('🔍 TX_REF EXTRACTED: $txRef');
+          if (txRef != null && txRef.isNotEmpty) {
             return MaterialPageRoute(
               builder: (context) => PaymentSuccessHandler(txRef: txRef),
             );
           }
         }
+        
+        // Also handle regular navigation
+        if (settings.name == '/dashboard') {
+          return MaterialPageRoute(
+            builder: (context) => const DashboardScreenWrapper(),
+          );
+        }
+        
         return null;
       },
       debugShowCheckedModeBanner: false,
@@ -56,10 +68,13 @@ class _PaymentSuccessHandlerState extends State<PaymentSuccessHandler> {
   @override
   void initState() {
     super.initState();
+    print('🔍 PAYMENT SUCCESS HANDLER INITIALIZED WITH TXREF: ${widget.txRef}');
     _verifyAndStore();
   }
 
   Future<void> _verifyAndStore() async {
+    print('🔍 STARTING VERIFICATION FOR TXREF: ${widget.txRef}');
+    
     final prefs = await SharedPreferences.getInstance();
     
     // Store the tx_ref
@@ -70,22 +85,26 @@ class _PaymentSuccessHandlerState extends State<PaymentSuccessHandler> {
       final apiService = ApiService();
       final result = await apiService.verifyPayment(widget.txRef);
       
+      print('🔍 VERIFICATION RESULT: $result');
+      
       setState(() {
         _isVerifying = false;
         _paymentResult = result;
       });
       
       if (result['success'] == true && result['verified'] == true) {
+        print('✅ PAYMENT VERIFIED! Showing success dialog');
         if (mounted) {
           _showSuccessDialog(result);
         }
       } else {
+        print('⚠️ PAYMENT NOT VERIFIED');
         if (mounted) {
           _showPendingDialog();
         }
       }
     } catch (e) {
-      print('Verification error: $e');
+      print('❌ VERIFICATION EXCEPTION: $e');
       setState(() => _isVerifying = false);
       if (mounted) {
         _showPendingDialog();
