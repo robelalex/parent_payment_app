@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,12 +23,10 @@ class MyApp extends StatelessWidget {
         '/dashboard': (context) => const DashboardScreenWrapper(),
       },
       onGenerateRoute: (settings) {
-        // Handle deep link: parentpay://payment/success?tx_ref=xxx
         if (settings.name != null && settings.name!.startsWith('/payment/success')) {
           final uri = Uri.parse(settings.name!);
           final txRef = uri.queryParameters['tx_ref'];
           if (txRef != null) {
-            // Store tx_ref and navigate to dashboard
             return MaterialPageRoute(
               builder: (context) => DashboardScreenWithTxRef(txRef: txRef),
             );
@@ -40,7 +39,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// Wrapper to get studentId from SharedPreferences
 class DashboardScreenWrapper extends StatefulWidget {
   const DashboardScreenWrapper({super.key});
 
@@ -90,30 +88,26 @@ class _DashboardScreenWrapperState extends State<DashboardScreenWrapper> {
   }
 }
 
-// Screen to handle deep link with tx_ref
-class DashboardScreenWithTxRef extends StatelessWidget {
+class DashboardScreenWithTxRef extends StatefulWidget {
   final String txRef;
 
   const DashboardScreenWithTxRef({super.key, required this.txRef});
 
   @override
-  Widget build(BuildContext context) {
-    // Store tx_ref and navigate to dashboard
-    return FutureBuilder(
-      future: _storeTxRefAndNavigate(context),
-      builder: (context, snapshot) {
-        return const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        );
-      },
-    );
+  State<DashboardScreenWithTxRef> createState() => _DashboardScreenWithTxRefState();
+}
+
+class _DashboardScreenWithTxRefState extends State<DashboardScreenWithTxRef> {
+  @override
+  void initState() {
+    super.initState();
+    _storeTxRefAndNavigate();
   }
 
-  Future<void> _storeTxRefAndNavigate(BuildContext context) async {
+  Future<void> _storeTxRefAndNavigate() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_tx_ref', txRef);
+    await prefs.setString('pending_tx_ref', widget.txRef);
     
-    // Get student ID from storage
     final savedStudent = prefs.getString('selected_student');
     if (savedStudent != null) {
       try {
@@ -146,7 +140,11 @@ class DashboardScreenWithTxRef extends StatelessWidget {
       }
     }
   }
-}
 
-// Add this import at the top
-import 'dart:convert';
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
