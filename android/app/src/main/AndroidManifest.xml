@@ -24,6 +24,13 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- ✅ ADD THIS DEEP LINK INTENT FILTER -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="parentpay" android:host="payment" />
+            </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"
@@ -31,7 +38,6 @@
     </application>
 
     <queries>
-        <!-- Required for url_launcher to work on Android 11+ -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />

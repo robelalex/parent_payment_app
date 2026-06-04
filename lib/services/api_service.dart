@@ -210,14 +210,21 @@ Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
   };
 }
 
-  Future<Map<String, dynamic>> initiatePayment(
-      Map<String, dynamic> payload) async {
-    if (_authToken == null) await getParentSession();
-    final res = await NativeHttpClient.post(
-      '$_base/chapa/test-payment/',
-      headers: await _headers,
-      body: payload,
-    );
+Future<Map<String, dynamic>> initiatePayment(
+    Map<String, dynamic> payload) async {
+  if (_authToken == null) await getParentSession();
+  
+  // ✅ ADD platform for mobile
+  final mobilePayload = {
+    ...payload,
+    'platform': 'mobile',
+  };
+  
+  final res = await NativeHttpClient.post(
+    '$_base/chapa/test-payment/',
+    headers: await _headers,
+    body: mobilePayload,
+  );
     debugPrint('[ApiService] initiatePayment → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
     return {
