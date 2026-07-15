@@ -1,6 +1,9 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
+import '../services/language_service.dart';
+import '../widgets/language_toggle.dart';
 import 'otp_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,8 +20,10 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _error;
 
   Future<void> _sendOtp() async {
+    final lang = context.read<LanguageService>();
+
     if (!_emailController.text.contains('@')) {
-      setState(() => _error = 'Enter a valid email address');
+      setState(() => _error = lang.t('login_invalid_email'));
       return;
     }
 
@@ -39,7 +44,7 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
       } else {
-        setState(() => _error = response['error'] ?? 'Failed to send OTP');
+        setState(() => _error = response['error'] ?? lang.t('login_send_otp_failed'));
       }
     } catch (e) {
       // Show real error instead of generic message
@@ -51,7 +56,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageService>();
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: LanguageToggle(),
+          ),
+        ],
+      ),
+      extendBodyBehindAppBar: true,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -68,16 +86,16 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 Icon(Icons.school, size: 80, color: Colors.green.shade700),
                 const SizedBox(height: 20),
-                const Text(
-                  'Parent Portal',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                Text(
+                  lang.t('app_title'),
+                  style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 40),
                 TextField(
                   controller: _emailController,
                   decoration: InputDecoration(
                     prefixIcon: const Icon(Icons.email),
-                    labelText: 'Email Address',
+                    labelText: lang.t('login_email_label'),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -128,13 +146,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Row(
+                        : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text('Send Verification Code',
-                                  style: TextStyle(fontSize: 16)),
-                              SizedBox(width: 10),
-                              Icon(Icons.arrow_forward),
+                              Text(lang.t('login_send_code'),
+                                  style: const TextStyle(fontSize: 16)),
+                              const SizedBox(width: 10),
+                              const Icon(Icons.arrow_forward),
                             ],
                           ),
                   ),
