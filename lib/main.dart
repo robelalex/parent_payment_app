@@ -1,13 +1,26 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/api_service.dart';
+import 'services/language_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  runApp(
+    // ✅ FIX: LoginScreen/LanguageToggle call context.watch<LanguageService>(),
+    // but nothing above them ever provided one — this would compile fine but
+    // crash immediately at runtime with a ProviderNotFoundException the
+    // moment the login screen tried to build. LanguageService is a
+    // ChangeNotifier that loads its own saved language in its constructor,
+    // so a plain ChangeNotifierProvider (not .value) is correct here.
+    ChangeNotifierProvider(
+      create: (_) => LanguageService(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
