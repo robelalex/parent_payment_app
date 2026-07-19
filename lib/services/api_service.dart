@@ -254,6 +254,193 @@ Future<Map<String, dynamic>> initiatePayment(
     };
   }
 
+  // ─── Teacher Auth ─────────────────────────────────────────────────────────
+  // Teachers use the same email+password+OTP flow as the web admin panel
+  // (StaffMemberViewSet.create_login sets them up for it already) — no
+  // separate backend auth system needed.
+
+  Future<Map<String, dynamic>> teacherLogin(String email, String password) async {
+    final res = await NativeHttpClient.post(
+      '$_base/login/',
+      headers: await _headers,
+      body: {'email': email, 'password': password},
+    );
+    debugPrint('[ApiService] teacherLogin → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {
+      'success': false,
+      'error': _map(res.json)?['error'] ?? 'Login failed (${res.statusCode})',
+    };
+  }
+
+  Future<Map<String, dynamic>> verifyTeacherOtp(dynamic userId, String otp) async {
+    final res = await NativeHttpClient.post(
+      '$_base/verify/',
+      headers: await _headers,
+      body: {'user_id': userId.toString(), 'otp_code': otp},
+    );
+    debugPrint('[ApiService] verifyTeacherOtp → ${res.statusCode}');
+    if (res.isSuccess) {
+      final data = _map(res.json) ?? {};
+      // ✅ This endpoint returns 'access', not 'token' (JWT via simplejwt) —
+      // different field name than the parent OTP flow, same mechanism.
+      if (data['access'] != null) setAuthToken(data['access'] as String);
+      if (data['user']?['school']?['id'] != null) {
+        _schoolId = data['user']['school']['id'].toString();
+      }
+      return {'success': true, ...data};
+    }
+    return {
+      'success': false,
+      'error': _map(res.json)?['error'] ?? 'OTP verification failed (${res.statusCode})',
+    };
+  }
+
+  Future<void> saveTeacherSession(Map<String, dynamic> user, String accessToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('teacher_user', jsonEncode(user));
+    await prefs.setString('teacher_access_token', accessToken);
+    if (user['school']?['id'] != null) {
+      await prefs.setString('school_id', user['school']['id'].toString());
+      _schoolId = user['school']['id'].toString();
+    }
+  }
+
+  Future<Map<String, dynamic>?> getTeacherSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userRaw = prefs.getString('teacher_user');
+    final token = prefs.getString('teacher_access_token');
+    if (userRaw == null || token == null) return null;
+    setAuthToken(token);
+    return jsonDecode(userRaw) as Map<String, dynamic>;
+  }
+
+  Future<void> clearTeacherSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('teacher_user');
+    await prefs.remove('teacher_access_token');
+    clearAuthToken();
+  }
+
+  // ─── Teacher: my classes ────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getMyAssignments() async {
+    final res = await NativeHttpClient.get('$_base/teacher/my-assignments/', headers: await _headers);
+    debugPrint('[ApiService] getMyAssignments → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load your classes'};
+  }
+
+  Future<Map<String, dynamic>> getAssessmentTypes(int academicYearId) async {
+    final res = await NativeHttpClient.get(
+      '$_base/assessment-types/?academic_year_id=$academicYearId',
+      headers: await _headers,
+    );
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': 'Failed to load assessment types'};
+  }
+
+  // ─── Teacher: marks ─────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getMarkRoster({
+    required int subjectId, required int assessmentTypeId, required int grade, String section = '',
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/marks/roster/?subject_id=$subjectId&assessment_type_id=$assessmentTypeId&grade=$grade&section=$section',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getMarkRoster → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load roster'};
+  }
+
+  Future<Map<String, dynamic>> saveMarks({
+    required int subjectId, required int assessmentTypeId, required int grade, String section = '',
+    required List<Map<String, dynamic>> entries,
+  }) async {
+    final res = await NativeHttpClient.post(
+      '$_base/marks/bulk_save/',
+      headers: await _headers,
+      body: {
+        'subject_id': subjectId, 'assessment_type_id': assessmentTypeId,
+        'grade': grade, 'section': section, 'entries': entries,
+      },
+    );
+    debugPrint('[ApiService] saveMarks → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to save marks'};
+  }
+
+  Future<Map<String, dynamic>> submitMarks({
+    required int subjectId, required int assessmentTypeId, required int grade, String section = '',
+  }) async {
+    final res = await NativeHttpClient.post(
+      '$_base/marks/submit/',
+      headers: await _headers,
+      body: {'subject_id': subjectId, 'assessment_type_id': assessmentTypeId, 'grade': grade, 'section': section},
+    );
+    debugPrint('[ApiService] submitMarks → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to submit marks'};
+  }
+
+  // ─── Homeroom: review ───────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getHomeroomPending({required int grade, required String section}) async {
+    final res = await NativeHttpClient.get(
+      '$_base/marks/homeroom_pending/?grade=$grade&section=$section',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getHomeroomPending → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load pending marks'};
+  }
+
+  Future<Map<String, dynamic>> homeroomDecide({
+    required bool accept, required int subjectId, required int assessmentTypeId,
+    required int grade, required String section, String note = '',
+  }) async {
+    final res = await NativeHttpClient.post(
+      '$_base/marks/${accept ? 'homeroom_accept' : 'homeroom_reject'}/',
+      headers: await _headers,
+      body: {
+        'subject_id': subjectId, 'assessment_type_id': assessmentTypeId,
+        'grade': grade, 'section': section, 'note': note,
+      },
+    );
+    debugPrint('[ApiService] homeroomDecide → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to update'};
+  }
+
+  // ─── Homeroom: attendance ───────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> getAttendanceRoster({
+    required int grade, required String section, required String date,
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/attendance/roster/?grade=$grade&section=$section&date=$date',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getAttendanceRoster → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load attendance'};
+  }
+
+  Future<Map<String, dynamic>> saveAttendance({
+    required int grade, required String section, required String date,
+    required List<Map<String, dynamic>> entries,
+  }) async {
+    final res = await NativeHttpClient.post(
+      '$_base/attendance/bulk_save/',
+      headers: await _headers,
+      body: {'grade': grade, 'section': section, 'date': date, 'entries': entries},
+    );
+    debugPrint('[ApiService] saveAttendance → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to save attendance'};
+  }
+
   // ─── Utility ──────────────────────────────────────────────────────────────
 
   Map<String, dynamic>? _map(dynamic v) =>

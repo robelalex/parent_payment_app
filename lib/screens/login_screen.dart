@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/language_service.dart';
 import '../widgets/language_toggle.dart';
 import 'otp_screen.dart';
+import 'teacher/teacher_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -155,6 +156,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               const Icon(Icons.arrow_forward),
                             ],
                           ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const TeacherLoginScreen()),
+                    );
+                  },
+                  child: Text(
+                    lang.t('teacher_login_link'),
+                    style: TextStyle(color: Colors.grey.shade700, decoration: TextDecoration.underline),
                   ),
                 ),
               ],
