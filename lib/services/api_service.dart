@@ -268,7 +268,7 @@ Future<Map<String, dynamic>> initiatePayment(
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
     return {
       'success': false,
-      'error': _map(res.json)?['error'] ?? 'Login failed (${res.statusCode})',
+      'error': _errorMessage(res, 'Login failed (${res.statusCode})'),
     };
   }
 
@@ -291,7 +291,7 @@ Future<Map<String, dynamic>> initiatePayment(
     }
     return {
       'success': false,
-      'error': _map(res.json)?['error'] ?? 'OTP verification failed (${res.statusCode})',
+      'error': _errorMessage(res, 'OTP verification failed (${res.statusCode})'),
     };
   }
 
@@ -327,7 +327,7 @@ Future<Map<String, dynamic>> initiatePayment(
     final res = await NativeHttpClient.get('$_base/teacher/my-assignments/', headers: await _headers);
     debugPrint('[ApiService] getMyAssignments → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load your classes'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load your classes')};
   }
 
   Future<Map<String, dynamic>> getAssessmentTypes(int academicYearId) async {
@@ -350,7 +350,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] getMarkRoster → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load roster'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load roster')};
   }
 
   Future<Map<String, dynamic>> saveMarks({
@@ -367,7 +367,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] saveMarks → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to save marks'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to save marks')};
   }
 
   Future<Map<String, dynamic>> submitMarks({
@@ -380,7 +380,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] submitMarks → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to submit marks'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to submit marks')};
   }
 
   // ─── Homeroom: review ───────────────────────────────────────────────────
@@ -392,7 +392,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] getHomeroomPending → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load pending marks'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load pending marks')};
   }
 
   Future<Map<String, dynamic>> homeroomDecide({
@@ -409,7 +409,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] homeroomDecide → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to update'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to update')};
   }
 
   // ─── Homeroom: attendance ───────────────────────────────────────────────
@@ -423,7 +423,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] getAttendanceRoster → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to load attendance'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load attendance')};
   }
 
   Future<Map<String, dynamic>> saveAttendance({
@@ -437,11 +437,23 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] saveAttendance → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _map(res.json)?['error'] ?? 'Failed to save attendance'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to save attendance')};
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────
 
   Map<String, dynamic>? _map(dynamic v) =>
       v is Map ? Map<String, dynamic>.from(v) : null;
+
+  /// Builds a useful error message even when the backend didn't return
+  /// clean JSON (server crash → HTML error page, wrong URL → 404 page,
+  /// etc.) — shows the real HTTP status and a snippet of the raw response
+  /// right in the app, so a failure can be diagnosed from the phone alone,
+  /// without needing server log access.
+  String _errorMessage(NativeHttpResponse res, String fallback) {
+    final parsed = _map(res.json)?['error'] ?? _map(res.json)?['detail'];
+    if (parsed != null) return parsed.toString();
+    final snippet = res.body.length > 300 ? '${res.body.substring(0, 300)}…' : res.body;
+    return '$fallback — HTTP ${res.statusCode}: ${snippet.isEmpty ? '(empty response)' : snippet}';
+  }
 }

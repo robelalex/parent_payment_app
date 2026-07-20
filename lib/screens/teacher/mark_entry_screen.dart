@@ -156,7 +156,7 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
       body: _isLoadingAssessments
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _assessmentTypes.isEmpty
-              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
+              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: SelectableText(_error!)))
               : Column(
                   children: [
                     Padding(
@@ -187,7 +187,7 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
-                          child: Text(_error!, style: TextStyle(color: Colors.red.shade700)),
+                          child: SelectableText(_error!, style: TextStyle(color: Colors.red.shade700)),
                         ),
                       ),
                     Expanded(

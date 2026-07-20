@@ -119,7 +119,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(_error!, style: TextStyle(color: Colors.red.shade700)),
+              child: SelectableText(_error!, style: TextStyle(color: Colors.red.shade700)),
             ),
           Expanded(
             child: _isLoading

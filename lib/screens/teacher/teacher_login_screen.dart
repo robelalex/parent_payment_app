@@ -121,7 +121,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                       children: [
                         Icon(Icons.error, color: Colors.red.shade700, size: 20),
                         const SizedBox(width: 8),
-                        Expanded(child: Text(_error!, style: TextStyle(color: Colors.red.shade700))),
+                        Expanded(child: SelectableText(_error!, style: TextStyle(color: Colors.red.shade700))),
                       ],
                     ),
                   ),

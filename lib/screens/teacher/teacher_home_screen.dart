@@ -76,7 +76,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
+              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: SelectableText(_error!)))
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
