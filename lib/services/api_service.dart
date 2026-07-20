@@ -108,26 +108,25 @@ class ApiService {
 
   Future<Map<String, dynamic>> getStudentById(String studentId) async {
     if (_authToken == null) await getParentSession();
+    // ✅ FIX: was hitting /students/?search= — the admin LIST endpoint,
+    // which needs a resolvable school and returns nothing for a parent
+    // account (parents have no school of their own). The web app already
+    // correctly uses this dedicated, unscoped lookup-by-ID endpoint —
+    // Flutter just wasn't pointed at it.
     final res = await NativeHttpClient.get(
-      '$_base/students/?search=$studentId',
+      '$_base/students/search_by_id/?student_id=$studentId',
       headers: await _headers,
     );
     debugPrint('[ApiService] getStudentById → ${res.statusCode}');
     if (res.isSuccess) {
-      final list = res.json;
-      if (list is List && list.isNotEmpty) {
-        final match = list.firstWhere(
-          (s) => s['student_id']?.toString().toUpperCase() ==
-              studentId.toUpperCase(),
-          orElse: () => list.first,
-        );
-        return Map<String, dynamic>.from(match as Map);
-      }
+      final data = _map(res.json);
+      if (data != null) return data;
       return {'success': false, 'error': 'Student not found'};
     }
     return {
       'success': false,
-      'error': _map(res.json)?['detail'] ??
+      'error': _map(res.json)?['error'] ??
+          _map(res.json)?['detail'] ??
           'Student not found (${res.statusCode})',
     };
   }
