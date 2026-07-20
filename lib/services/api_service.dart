@@ -324,6 +324,7 @@ Future<Map<String, dynamic>> initiatePayment(
   // ─── Teacher: my classes ────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getMyAssignments() async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.get('$_base/teacher/my-assignments/', headers: await _headers);
     debugPrint('[ApiService] getMyAssignments → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
@@ -331,12 +332,18 @@ Future<Map<String, dynamic>> initiatePayment(
   }
 
   Future<Map<String, dynamic>> getAssessmentTypes(int academicYearId) async {
+    // ✅ FIX: each teacher screen creates its own ApiService() instance, so
+    // an in-memory _authToken set on the login/OTP screen's instance never
+    // reaches this one. Restore it from SharedPreferences before calling,
+    // same pattern used by the teacher methods below and by the parent
+    // methods above (getStudentById/getPendingPayments/getPaymentHistory).
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.get(
       '$_base/assessment-types/?academic_year_id=$academicYearId',
       headers: await _headers,
     );
     if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
-    return {'success': false, 'error': 'Failed to load assessment types'};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load assessment types')};
   }
 
   // ─── Teacher: marks ─────────────────────────────────────────────────────
@@ -344,6 +351,7 @@ Future<Map<String, dynamic>> initiatePayment(
   Future<Map<String, dynamic>> getMarkRoster({
     required int subjectId, required int assessmentTypeId, required int grade, String section = '',
   }) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.get(
       '$_base/marks/roster/?subject_id=$subjectId&assessment_type_id=$assessmentTypeId&grade=$grade&section=$section',
       headers: await _headers,
@@ -357,6 +365,7 @@ Future<Map<String, dynamic>> initiatePayment(
     required int subjectId, required int assessmentTypeId, required int grade, String section = '',
     required List<Map<String, dynamic>> entries,
   }) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.post(
       '$_base/marks/bulk_save/',
       headers: await _headers,
@@ -373,6 +382,7 @@ Future<Map<String, dynamic>> initiatePayment(
   Future<Map<String, dynamic>> submitMarks({
     required int subjectId, required int assessmentTypeId, required int grade, String section = '',
   }) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.post(
       '$_base/marks/submit/',
       headers: await _headers,
@@ -386,6 +396,7 @@ Future<Map<String, dynamic>> initiatePayment(
   // ─── Homeroom: review ───────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getHomeroomPending({required int grade, required String section}) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.get(
       '$_base/marks/homeroom_pending/?grade=$grade&section=$section',
       headers: await _headers,
@@ -399,6 +410,7 @@ Future<Map<String, dynamic>> initiatePayment(
     required bool accept, required int subjectId, required int assessmentTypeId,
     required int grade, required String section, String note = '',
   }) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.post(
       '$_base/marks/${accept ? 'homeroom_accept' : 'homeroom_reject'}/',
       headers: await _headers,
@@ -417,6 +429,7 @@ Future<Map<String, dynamic>> initiatePayment(
   Future<Map<String, dynamic>> getAttendanceRoster({
     required int grade, required String section, required String date,
   }) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.get(
       '$_base/attendance/roster/?grade=$grade&section=$section&date=$date',
       headers: await _headers,
@@ -430,6 +443,7 @@ Future<Map<String, dynamic>> initiatePayment(
     required int grade, required String section, required String date,
     required List<Map<String, dynamic>> entries,
   }) async {
+    if (_authToken == null) await getTeacherSession();
     final res = await NativeHttpClient.post(
       '$_base/attendance/bulk_save/',
       headers: await _headers,
