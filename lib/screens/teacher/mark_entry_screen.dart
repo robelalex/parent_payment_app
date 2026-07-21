@@ -55,20 +55,37 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
       setState(() { _error = 'No academic year set for your school'; _isLoadingAssessments = false; });
       return;
     }
-    final response = await _apiService.getAssessmentTypes(widget.academicYearId!);
-    if (response['success'] == true) {
-      final list = response['data'] as List;
-      setState(() {
-        _assessmentTypes = list;
-        _isLoadingAssessments = false;
+    try {
+      final response = await _apiService.getAssessmentTypes(widget.academicYearId!);
+      if (!mounted) return;
+      if (response['success'] == true) {
+        final list = response['data'] as List;
+        setState(() {
+          _assessmentTypes = list;
+          _isLoadingAssessments = false;
+          if (list.isNotEmpty) {
+            _selectedAssessmentId = list.first['id'];
+            _maxScore = list.first['max_score'];
+          }
+        });
+        // Runs after the setState above so _selectedAssessmentId is
+        // committed before _loadRoster reads it, and stays outside the
+        // setState callback so its own try/catch can actually catch.
         if (list.isNotEmpty) {
-          _selectedAssessmentId = list.first['id'];
-          _maxScore = list.first['max_score'];
-          _loadRoster();
+          await _loadRoster();
         }
+      } else {
+        setState(() { _error = response['error']; _isLoadingAssessments = false; });
+      }
+    } catch (e) {
+      // A thrown NativeHttpException (timeout, dropped connection, etc.)
+      // used to leave _isLoadingAssessments stuck at true forever — an
+      // endless spinner with no way for the teacher to tell what's wrong.
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not reach the server. Check your connection and try again.';
+        _isLoadingAssessments = false;
       });
-    } else {
-      setState(() { _error = response['error']; _isLoadingAssessments = false; });
     }
   }
 
@@ -76,62 +93,81 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
     if (_selectedAssessmentId == null) return;
     setState(() { _isLoadingRoster = true; _error = null; });
 
-    final response = await _apiService.getMarkRoster(
-      subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
-      grade: widget.grade, section: widget.section,
-    );
+    try {
+      final response = await _apiService.getMarkRoster(
+        subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
+        grade: widget.grade, section: widget.section,
+      );
+      if (!mounted) return;
 
-    if (response['success'] == true) {
-      final students = response['students'] as List;
-      for (final c in _controllers.values) {
-        c.dispose();
+      if (response['success'] == true) {
+        final students = response['students'] as List;
+        for (final c in _controllers.values) {
+          c.dispose();
+        }
+        _controllers.clear();
+        for (final s in students) {
+          _controllers[s['student_id']] = TextEditingController(
+            text: s['score'] != null ? s['score'].toString() : '',
+          );
+        }
+        setState(() { _students = students; _isLoadingRoster = false; });
+      } else {
+        setState(() { _error = response['error']; _isLoadingRoster = false; });
       }
-      _controllers.clear();
-      for (final s in students) {
-        _controllers[s['student_id']] = TextEditingController(
-          text: s['score'] != null ? s['score'].toString() : '',
-        );
-      }
-      setState(() { _students = students; _isLoadingRoster = false; });
-    } else {
-      setState(() { _error = response['error']; _isLoadingRoster = false; });
+    } catch (e) {
+      // Same fix as _loadAssessmentTypes: a thrown exception from the
+      // native HTTP layer must never leave _isLoadingRoster stuck at
+      // true, or the roster screen spins forever with no explanation.
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not reach the server. Check your connection and try again.';
+        _isLoadingRoster = false;
+      });
     }
   }
 
   Future<void> _save({bool submit = false}) async {
     setState(() { _isSaving = true; _error = null; });
 
-    final entries = _students.map((s) {
-      final text = _controllers[s['student_id']]!.text.trim();
-      return {'student_id': s['student_id'], 'score': text.isEmpty ? null : num.tryParse(text)};
-    }).toList();
+    try {
+      final entries = _students.map((s) {
+        final text = _controllers[s['student_id']]!.text.trim();
+        return {'student_id': s['student_id'], 'score': text.isEmpty ? null : num.tryParse(text)};
+      }).toList();
 
-    final response = await _apiService.saveMarks(
-      subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
-      grade: widget.grade, section: widget.section, entries: entries,
-    );
+      final response = await _apiService.saveMarks(
+        subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
+        grade: widget.grade, section: widget.section, entries: entries,
+      );
 
-    if (response['success'] == true) {
-      if (submit) {
-        final submitResponse = await _apiService.submitMarks(
-          subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
-          grade: widget.grade, section: widget.section,
-        );
-        if (mounted && submitResponse['success'] == true) {
+      if (response['success'] == true) {
+        if (submit) {
+          final submitResponse = await _apiService.submitMarks(
+            subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
+            grade: widget.grade, section: widget.section,
+          );
+          if (mounted && submitResponse['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Submitted ${submitResponse['submitted']} marks for homeroom review')),
+            );
+          }
+        } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Submitted ${submitResponse['submitted']} marks for homeroom review')),
+            SnackBar(content: Text('Saved ${response['saved']} marks')),
           );
         }
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved ${response['saved']} marks')),
-        );
+        await _loadRoster();
+      } else {
+        if (!mounted) return;
+        setState(() => _error = response['error']);
       }
-      await _loadRoster();
-    } else {
-      setState(() => _error = response['error']);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Could not reach the server. Check your connection and try again.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
-    setState(() => _isSaving = false);
   }
 
   Color _statusColor(String status) {
