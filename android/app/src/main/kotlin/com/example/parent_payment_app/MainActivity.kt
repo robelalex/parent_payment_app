@@ -32,9 +32,17 @@ class MainActivity : FlutterActivity() {
         sslContext.init(null, trustAllCerts, java.security.SecureRandom())
 
         return OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            // ✅ Was 30s — Render's free tier spins the backend down after
+            // inactivity, and waking it back up (a "cold start") can take
+            // 30-60+ seconds on its own, before your actual request even
+            // starts processing. 30s connect timeout meant every cold-start
+            // request failed before the server even finished waking up.
+            // Bumped to give cold starts room to finish; also see the
+            // keep-alive suggestion to avoid cold starts entirely during
+            // school hours.
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
