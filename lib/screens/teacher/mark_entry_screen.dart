@@ -36,6 +36,16 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
   List<dynamic> _students = [];
   final Map<int, TextEditingController> _controllers = {};
 
+  // ✅ Django serializes DecimalField (max_score, score, weight_percent) as
+  // a STRING in JSON ("15.00", not 15.00) — correct DRF behavior to avoid
+  // float precision bugs, but it crashed here because these were assigned
+  // straight into num-typed variables. Parse defensively instead.
+  num? _asNum(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v;
+    return num.tryParse(v.toString());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -65,7 +75,7 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
           _isLoadingAssessments = false;
           if (list.isNotEmpty) {
             _selectedAssessmentId = list.first['id'];
-            _maxScore = list.first['max_score'];
+            _maxScore = _asNum(list.first['max_score']);
           }
         });
         if (list.isNotEmpty) await _loadRoster();
@@ -222,7 +232,7 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
                             .toList(),
                         onChanged: (value) {
                           final a = _assessmentTypes.firstWhere((x) => x['id'] == value);
-                          setState(() { _selectedAssessmentId = value; _maxScore = a['max_score']; });
+                          setState(() { _selectedAssessmentId = value; _maxScore = _asNum(a['max_score']); });
                           _loadRoster();
                         },
                       ),
