@@ -55,9 +55,9 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
       setState(() { _error = 'No academic year set for your school'; _isLoadingAssessments = false; });
       return;
     }
+    setState(() { _isLoadingAssessments = true; _error = null; });
     try {
       final response = await _apiService.getAssessmentTypes(widget.academicYearId!);
-      if (!mounted) return;
       if (response['success'] == true) {
         final list = response['data'] as List;
         setState(() {
@@ -68,22 +68,17 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
             _maxScore = list.first['max_score'];
           }
         });
-        // Runs after the setState above so _selectedAssessmentId is
-        // committed before _loadRoster reads it, and stays outside the
-        // setState callback so its own try/catch can actually catch.
-        if (list.isNotEmpty) {
-          await _loadRoster();
-        }
+        if (list.isNotEmpty) await _loadRoster();
       } else {
-        setState(() { _error = response['error']; _isLoadingAssessments = false; });
+        setState(() { _error = response['error']?.toString() ?? 'Failed to load assessment types'; _isLoadingAssessments = false; });
       }
-    } catch (e) {
-      // A thrown NativeHttpException (timeout, dropped connection, etc.)
-      // used to leave _isLoadingAssessments stuck at true forever — an
-      // endless spinner with no way for the teacher to tell what's wrong.
-      if (!mounted) return;
+    } catch (e, stack) {
+      // ✅ Never swallow the real error behind a generic message — show
+      // exactly what Dart/the native layer threw, so a failure is always
+      // diagnosable straight from the screen.
+      debugPrint('[MarkEntryScreen] _loadAssessmentTypes exception: $e\n$stack');
       setState(() {
-        _error = 'Could not reach the server. Check your connection and try again.';
+        _error = 'Could not load assessment types.\n\nDetails: $e';
         _isLoadingAssessments = false;
       });
     }
@@ -98,7 +93,6 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
         subjectId: widget.subjectId, assessmentTypeId: _selectedAssessmentId!,
         grade: widget.grade, section: widget.section,
       );
-      if (!mounted) return;
 
       if (response['success'] == true) {
         final students = response['students'] as List;
@@ -113,15 +107,15 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
         }
         setState(() { _students = students; _isLoadingRoster = false; });
       } else {
-        setState(() { _error = response['error']; _isLoadingRoster = false; });
+        setState(() { _error = response['error']?.toString() ?? 'Failed to load roster'; _isLoadingRoster = false; });
       }
-    } catch (e) {
-      // Same fix as _loadAssessmentTypes: a thrown exception from the
-      // native HTTP layer must never leave _isLoadingRoster stuck at
-      // true, or the roster screen spins forever with no explanation.
-      if (!mounted) return;
+    } catch (e, stack) {
+      // ✅ Same fix — a network timeout, a dropped connection, a native
+      // OkHttp exception... whatever it is, show its real message instead
+      // of a generic "could not reach the server" that hides the cause.
+      debugPrint('[MarkEntryScreen] _loadRoster exception: $e\n$stack');
       setState(() {
-        _error = 'Could not reach the server. Check your connection and try again.';
+        _error = 'Could not load the student roster.\n\nDetails: $e';
         _isLoadingRoster = false;
       });
     }
@@ -151,6 +145,8 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Submitted ${submitResponse['submitted']} marks for homeroom review')),
             );
+          } else if (submitResponse['success'] != true) {
+            setState(() => _error = submitResponse['error']?.toString() ?? 'Failed to submit marks');
           }
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -159,15 +155,13 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
         }
         await _loadRoster();
       } else {
-        if (!mounted) return;
-        setState(() => _error = response['error']);
+        setState(() => _error = response['error']?.toString() ?? 'Failed to save marks');
       }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = 'Could not reach the server. Check your connection and try again.');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+    } catch (e, stack) {
+      debugPrint('[MarkEntryScreen] _save exception: $e\n$stack');
+      setState(() => _error = 'Could not save marks.\n\nDetails: $e');
     }
+    setState(() => _isSaving = false);
   }
 
   Color _statusColor(String status) {
@@ -192,7 +186,23 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
       body: _isLoadingAssessments
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _assessmentTypes.isEmpty
-              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: SelectableText(_error!)))
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SelectableText(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadAssessmentTypes,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
               : Column(
                   children: [
                     Padding(
@@ -223,7 +233,21 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(8)),
-                          child: SelectableText(_error!, style: TextStyle(color: Colors.red.shade700)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SelectableText(_error!, style: TextStyle(color: Colors.red.shade700)),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton.icon(
+                                  onPressed: _isLoadingRoster ? null : _loadRoster,
+                                  icon: const Icon(Icons.refresh, size: 18),
+                                  label: const Text('Retry'),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     Expanded(
