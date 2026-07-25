@@ -5,9 +5,9 @@ import '../../services/api_service.dart';
 import '../../services/language_service.dart';
 import '../../widgets/language_toggle.dart';
 import '../login_screen.dart';
-import 'mark_entry_screen.dart';
+import 'gradebook_screen.dart';
 import 'attendance_screen.dart';
-import 'homeroom_review_screen.dart';
+import 'subject_attendance_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -52,6 +52,78 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false,
+      );
+    }
+  }
+
+  Future<void> _pickSubjectForReview(int grade, String section) async {
+    final response = await _apiService.getClassAssignments(grade);
+    if (response['success'] != true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(response['error']?.toString() ?? 'Failed to load subjects')),
+        );
+      }
+      return;
+    }
+
+    final all = response['data'] as List;
+    // A blank section on the assignment means "the whole grade" — covers this section too.
+    final relevant = all.where((a) => (a['section'] as String).isEmpty || a['section'] == section).toList();
+
+    // De-duplicate by subject, since multiple assignment rows can point at the same subject.
+    final seen = <int>{};
+    final subjects = <Map<String, dynamic>>[];
+    for (final a in relevant) {
+      final id = a['subject'] as int;
+      if (seen.add(id)) {
+        subjects.add({'id': id, 'name': a['subject_name'] ?? 'Subject'});
+      }
+    }
+
+    if (subjects.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No subjects are assigned to this class yet.')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    final chosen = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Choose a subject to review', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            ...subjects.map((s) => ListTile(
+                  leading: const Icon(Icons.menu_book),
+                  title: Text(s['name']),
+                  onTap: () => Navigator.pop(context, s),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (chosen != null && mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GradebookScreen(
+            subjectId: chosen['id'], subjectName: chosen['name'],
+            grade: grade, section: section,
+            academicYearId: _data?['current_academic_year_id'],
+            isHomeroomView: true,
+          ),
+        ),
       );
     }
   }
@@ -136,14 +208,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       child: OutlinedButton.icon(
                                         icon: const Icon(Icons.fact_check),
                                         label: Text(lang.t('teacher_review_marks'), textAlign: TextAlign.center),
-                                        onPressed: () => Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => HomeroomReviewScreen(
-                                              grade: homeroom['grade'], section: homeroom['section'],
-                                            ),
-                                          ),
-                                        ),
+                                        onPressed: () => _pickSubjectForReview(homeroom['grade'], homeroom['section']),
                                       ),
                                     ),
                                   ],
@@ -176,16 +241,37 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                               subtitle: Text(
                                 'Grade ${a['grade']}${(a['section'] as String).isNotEmpty ? ' - ${a['section']}' : ' (all sections)'}',
                               ),
-                              trailing: const Icon(Icons.chevron_right),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.checklist),
+                                    tooltip: lang.t('teacher_take_attendance'),
+                                    onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => SubjectAttendanceScreen(
+                                          subjectId: a['subject_id'],
+                                          subjectName: a['subject__name'] ?? '',
+                                          grade: a['grade'],
+                                          section: a['section'] ?? '',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const Icon(Icons.chevron_right),
+                                ],
+                              ),
                               onTap: () => Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => MarkEntryScreen(
+                                  builder: (_) => GradebookScreen(
                                     subjectId: a['subject_id'],
                                     subjectName: a['subject__name'] ?? '',
                                     grade: a['grade'],
                                     section: a['section'] ?? '',
                                     academicYearId: _data?['current_academic_year_id'],
+                                    isHomeroomView: false,
                                   ),
                                 ),
                               ),
