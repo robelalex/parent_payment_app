@@ -9,6 +9,16 @@ class ApiService {
 
   static const String baseUrl = _base;
 
+  // Singleton: every `ApiService()` call must return the SAME instance so
+  // the auth token set on login is visible to every screen. Before this,
+  // each screen created its own instance via `ApiService()`, so any screen
+  // that didn't explicitly call getTeacherSession()/getParentSession()
+  // first started with a null token and every request failed with
+  // "Authentication credentials were not provided."
+  static final ApiService _instance = ApiService._internal();
+  factory ApiService() => _instance;
+  ApiService._internal();
+
   String? _authToken;
   String? _schoolId;
 
