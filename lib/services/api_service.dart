@@ -9,16 +9,6 @@ class ApiService {
 
   static const String baseUrl = _base;
 
-  // Singleton: every `ApiService()` call must return the SAME instance so
-  // the auth token set on login is visible to every screen. Before this,
-  // each screen created its own instance via `ApiService()`, so any screen
-  // that didn't explicitly call getTeacherSession()/getParentSession()
-  // first started with a null token and every request failed with
-  // "Authentication credentials were not provided."
-  static final ApiService _instance = ApiService._internal();
-  factory ApiService() => _instance;
-  ApiService._internal();
-
   String? _authToken;
   String? _schoolId;
 
@@ -261,6 +251,29 @@ Future<Map<String, dynamic>> initiatePayment(
       'success': false,
       'error': 'Payment verification failed',
     };
+  }
+
+  /// Fast path — checks our own DB first (works for both dashboard and
+  /// reminder-link payments), same as the web's PaymentSuccess.js step 1.
+  Future<Map<String, dynamic>> getPaymentStatus(String txRef) async {
+    final res = await NativeHttpClient.get(
+      '$_base/payments/status/$txRef/',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getPaymentStatus → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _errorMessage(res, 'Payment not found')};
+  }
+
+  /// The real invoice — same public endpoint the web's ReceiptPage.jsx uses.
+  Future<Map<String, dynamic>> getReceipt(String receiptToken) async {
+    final res = await NativeHttpClient.get(
+      '$_base/receipt/$receiptToken/',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getReceipt → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _errorMessage(res, 'Receipt not found')};
   }
 
   // ─── Teacher Auth ─────────────────────────────────────────────────────────
@@ -529,6 +542,17 @@ Future<Map<String, dynamic>> initiatePayment(
     debugPrint('[ApiService] saveSubjectAttendance → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
     return {'success': false, 'error': _errorMessage(res, 'Failed to save attendance')};
+  }
+
+  /// Same public polling endpoint the web uses after an upload.
+  Future<Map<String, dynamic>> getSlipStatus(int slipId) async {
+    final res = await NativeHttpClient.get(
+      '$_base/slips/$slipId/status/',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getSlipStatus → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _errorMessage(res, 'Could not check slip status')};
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────

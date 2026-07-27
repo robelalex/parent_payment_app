@@ -1,12 +1,14 @@
 // lib/screens/upload_slip_modal.dart
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import '../models/student.dart';
 import '../models/payment.dart';
+import '../services/api_service.dart';
 
 class UploadSlipModal extends StatefulWidget {
   final Student student;
@@ -27,6 +29,7 @@ class UploadSlipModal extends StatefulWidget {
 class _UploadSlipModalState extends State<UploadSlipModal> {
   static const _channel = MethodChannel('com.example.parent_payment_app/http');
   static const _hostname = 'felege-selam-payment-system.onrender.com';
+  final _apiService = ApiService();
 
   final _bankNameController = TextEditingController();
   final _amountController = TextEditingController();
@@ -37,10 +40,32 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
   bool _success = false;
   final ImagePicker _picker = ImagePicker();
 
+  // ✅ Same behavior as the web's PaymentPage.js: upload just queues the
+  // slip for automatic bank verification — it doesn't confirm anything by
+  // itself. The app used to show "Uploaded Successfully!" and close after
+  // 2 seconds regardless of what actually happened next, so a slip that
+  // failed CBE verification looked identical to one that succeeded. Now
+  // it polls the same way the web does and shows the real outcome.
+  int? _slipId;
+  String _verificationStatus = 'queued'; // queued | verified | failed | manual_review | timeout
+  String _verificationMessage = '';
+  Timer? _pollTimer;
+  int _pollAttempts = 0;
+  static const int _maxPollAttempts = 24; // 24 x 5s = 2 minutes
+
   @override
   void initState() {
     super.initState();
     _amountController.text = widget.payment.amount.toString();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _bankNameController.dispose();
+    _amountController.dispose();
+    _transactionDateController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickImage() async {
@@ -124,23 +149,34 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
 
       if (statusCode == 201) {
         final responseData = jsonDecode(responseBody);
-        setState(() => _success = true);
+        final slipId = responseData['slip_id'] as int?;
+        final initialStatus = responseData['verification_status']?.toString();
 
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(responseData['message'] ?? 'Slip uploaded successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
+        if (initialStatus == 'manual_review') {
+          // Backend already knows this needs a human — no point polling.
+          setState(() {
+            _verificationStatus = 'manual_review';
+            _verificationMessage = (responseData['ai_details']?['message'] ??
+                    'Could not detect the reference number automatically. '
+                        'The school will verify this manually.')
+                .toString();
+            _success = true;
+          });
+        } else if (slipId != null) {
+          setState(() {
+            _slipId = slipId;
+            _success = true;
+            _verificationStatus = 'queued';
+            _verificationMessage = 'Uploaded! Verifying with the bank automatically...';
+          });
+          _startPolling(slipId);
+        } else {
+          setState(() {
+            _success = true;
+            _verificationStatus = 'queued';
+            _verificationMessage = responseData['message']?.toString() ?? 'Slip uploaded successfully!';
+          });
         }
-
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            widget.onSuccess();
-            Navigator.pop(context);
-          }
-        });
       } else {
         final errorData = jsonDecode(responseBody);
         setState(() => _error = errorData['error'] ?? 'Upload failed ($statusCode)');
@@ -151,6 +187,85 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
       setState(() => _error = 'Upload failed: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Same cadence as the web's PaymentPage.js — check every 5 seconds
+  /// until the bank verification actually resolves, instead of assuming
+  /// success the moment the upload itself completes.
+  void _startPolling(int slipId) {
+    _pollAttempts = 0;
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      _pollAttempts++;
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_pollAttempts > _maxPollAttempts) {
+        timer.cancel();
+        setState(() {
+          _verificationStatus = 'timeout';
+          _verificationMessage = "This is taking longer than usual. The school will still verify it — "
+              "you don't need to re-upload. Check back later from your dashboard.";
+        });
+        return;
+      }
+
+      final response = await _apiService.getSlipStatus(slipId);
+      if (response['success'] != true) return; // transient network hiccup — just try again next tick
+
+      final status = response['verification_status']?.toString() ?? 'queued';
+
+      if (status == 'verified') {
+        timer.cancel();
+        final payer = response['payer_name']?.toString();
+        final amount = response['bank_amount']?.toString();
+        setState(() {
+          _verificationStatus = 'verified';
+          _verificationMessage = 'Verified!'
+              '${payer != null ? ' Payer: $payer.' : ''}'
+              '${amount != null ? ' Amount: $amount Birr.' : ''}'
+              ' You\'ll get an SMS confirmation shortly.';
+        });
+      } else if (['failed', 'timeout', 'manual_review'].contains(status)) {
+        timer.cancel();
+        setState(() {
+          _verificationStatus = status;
+          _verificationMessage = response['error']?.toString() ??
+              'Verification $status — the school will check this manually.';
+        });
+      }
+      // else: still queued/pending — keep polling silently, matching web.
+    });
+  }
+
+  Color _statusColor() {
+    switch (_verificationStatus) {
+      case 'verified': return Colors.green.shade700;
+      case 'failed': return Colors.red.shade700;
+      case 'manual_review': return Colors.orange.shade700;
+      case 'timeout': return Colors.orange.shade700;
+      default: return Colors.blue.shade700;
+    }
+  }
+
+  IconData _statusIcon() {
+    switch (_verificationStatus) {
+      case 'verified': return Icons.check_circle;
+      case 'failed': return Icons.error;
+      case 'manual_review': return Icons.hourglass_top;
+      case 'timeout': return Icons.schedule;
+      default: return Icons.cloud_upload;
+    }
+  }
+
+  String _statusTitle() {
+    switch (_verificationStatus) {
+      case 'verified': return 'Payment Verified!';
+      case 'failed': return 'Verification Failed';
+      case 'manual_review': return 'Pending Manual Review';
+      case 'timeout': return 'Still Checking';
+      default: return 'Uploaded — Verifying...';
     }
   }
 
@@ -169,24 +284,36 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.green.shade50,
+                      color: _statusColor().withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(Icons.check_circle,
-                        size: 48, color: Colors.green.shade700),
+                    child: Icon(_statusIcon(), size: 48, color: _statusColor()),
                   ),
                   const SizedBox(height: 16),
-                  const Text('Uploaded Successfully!',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(_statusTitle(),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center),
                   const SizedBox(height: 8),
-                  const Text(
-                    'Your bank slip has been submitted for verification.',
+                  Text(
+                    _verificationMessage,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
+                    style: const TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 20),
-                  const Center(child: CircularProgressIndicator()),
+                  if (_verificationStatus == 'queued')
+                    const Center(child: CircularProgressIndicator())
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
+                        onPressed: () {
+                          widget.onSuccess();
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Done', style: TextStyle(color: Colors.white)),
+                      ),
+                    ),
                 ],
               )
             : SingleChildScrollView(
