@@ -9,6 +9,7 @@ import 'enter_student_id_screen.dart';
 import 'bank_transfer_modal.dart';
 import 'upload_slip_modal.dart';
 import 'chapa_webview_screen.dart';
+import '../utils/media_url.dart';
 import 'dart:convert';
 
 class DashboardScreen extends StatefulWidget {
@@ -418,6 +419,59 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  // ✅ Same visual as the web's ParentDashboard.js student header: a round
+  // photo when the school has uploaded one, otherwise a plain icon —
+  // instead of always showing the generic school icon like before.
+  Widget _buildStudentAvatar() {
+    final url = mediaUrl(_student?.photo);
+    if (url == null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Colors.indigo, Colors.indigoAccent],
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Icon(Icons.school, color: Colors.white, size: 28),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Image.network(
+        url,
+        width: 52,
+        height: 52,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            width: 52,
+            height: 52,
+            color: Colors.indigo.shade50,
+            child: const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Colors.indigo, Colors.indigoAccent],
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.school, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStudentInfoCard() {
     return Container(
       decoration: BoxDecoration(
@@ -441,17 +495,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Colors.indigo, Colors.indigoAccent],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(Icons.school,
-                      color: Colors.white, size: 28),
-                ),
+                _buildStudentAvatar(),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(

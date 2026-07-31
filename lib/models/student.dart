@@ -15,6 +15,9 @@ class Student {
   final String? bankAccountNumber;
   final String? bankAccountHolder;
   final String? schoolName;
+
+  // ✅ Student profile photo — same field the web reads as student.photo
+  final String? photo;
   
   Student({
     required this.id,
@@ -31,6 +34,7 @@ class Student {
     this.bankAccountNumber,
     this.bankAccountHolder,
     this.schoolName,
+    this.photo,
   });
   
   factory Student.fromJson(Map<String, dynamic> json) {
@@ -59,6 +63,8 @@ class Student {
       bankAccountNumber: json['bank_account_number'],
       bankAccountHolder: json['bank_account_holder'],
       schoolName: json['school_name'],
+      // ✅ Same source field the backend's StudentSerializer exposes for web
+      photo: json['photo'],
     );
   }
 }
