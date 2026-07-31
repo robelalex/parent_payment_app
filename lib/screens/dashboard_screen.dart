@@ -1,6 +1,5 @@
 // lib/screens/dashboard_screen.dart
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 import '../models/student.dart';
@@ -9,6 +8,7 @@ import 'login_screen.dart';
 import 'enter_student_id_screen.dart';
 import 'bank_transfer_modal.dart';
 import 'upload_slip_modal.dart';
+import 'chapa_webview_screen.dart';
 import 'dart:convert';
 
 class DashboardScreen extends StatefulWidget {
@@ -161,12 +161,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
 
       if (result['checkout_url'] != null) {
+        final txRef = result['tx_ref']?.toString() ?? '';
         // Save the transaction reference for when user returns
-        if (result['tx_ref'] != null) {
+        if (txRef.isNotEmpty) {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('pending_tx_ref', result['tx_ref']);
+          await prefs.setString('pending_tx_ref', txRef);
         }
-        _showPaymentDialog(result['checkout_url'] as String);
+        _showPaymentDialog(result['checkout_url'] as String, txRef);
       } else if (result['success'] == true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -216,7 +217,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _showPaymentDialog(String url) {
+  void _showPaymentDialog(String url, String txRef) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -231,7 +232,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              _launchURL(url);
+              _openChapaCheckout(url, txRef);
             },
             child: const Text('Continue'),
           ),
@@ -240,18 +241,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Future<void> _launchURL(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      // Fallback - show error message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open payment page')),
-        );
-      }
-    }
+  // ✅ Opens Chapa checkout INSIDE the app instead of the external browser.
+  // The old approach (external browser + a custom parentpay:// link the
+  // checkout page tried to auto-open afterwards) was unreliable — mobile
+  // browsers frequently block that kind of script-triggered app-switch,
+  // so the app never found out the payment had finished and you'd just
+  // land back on the dashboard looking unpaid. The in-app WebView lets
+  // Flutter watch the navigation itself and catch the redirect directly.
+  Future<void> _openChapaCheckout(String checkoutUrl, String txRef) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ChapaWebViewScreen(
+          checkoutUrl: checkoutUrl,
+          txRef: txRef,
+        ),
+      ),
+    );
+    // Refresh in case the person cancelled/backed out after actually paying.
+    if (mounted) _loadData();
   }
 
   int _getDaysRemaining(String? dueDate) {
