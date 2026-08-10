@@ -70,6 +70,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
               .map((p) => Payment.fromJson(
                   Map<String, dynamic>.from(p as Map)))
               .toList();
+
+          // ✅ NEW: a parent who saw "Verification Pending" and left the
+          // app had no way to resolve it themselves afterward — the only
+          // re-check was the "Check Again" button on that one screen,
+          // easy to lose track of. Now, every time the dashboard loads,
+          // any still-pending Chapa payment gets silently re-checked in
+          // the background. If Chapa has since confirmed it (webhook lag
+          // is common), it flips to Verified right here — no trip to the
+          // school needed. Operates on the raw JSON (not the Payment
+          // objects above) since Payment doesn't carry payment_method or
+          // transaction_ref.
+          _recheckPendingChapaPayments(historyRaw);
         }
       } else {
         setState(() => _error = 'Student data not found');
@@ -78,6 +90,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() => _error = 'Failed to load data: $e');
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _recheckPendingChapaPayments(List<dynamic> rawHistory) async {
+    final stuckOnes = rawHistory.where((p) {
+      final m = Map<String, dynamic>.from(p as Map);
+      return m['status'] == 'pending' &&
+          m['payment_method'] == 'chapa' &&
+          (m['transaction_ref'] != null && m['transaction_ref'].toString().isNotEmpty);
+    }).toList();
+
+    if (stuckOnes.isEmpty) return;
+
+    bool anyResolved = false;
+    for (final p in stuckOnes) {
+      final m = Map<String, dynamic>.from(p as Map);
+      try {
+        final result = await _apiService.verifyPayment(m['transaction_ref'].toString());
+        if (result['verified'] == true) anyResolved = true;
+      } catch (_) {
+        // Silent — background best-effort check, not a user-facing
+        // action. If Chapa is unreachable right now, the payment just
+        // stays pending until the next dashboard load.
+      }
+    }
+
+    if (anyResolved && mounted) {
+      await _loadData();
     }
   }
 

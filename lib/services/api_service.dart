@@ -363,9 +363,15 @@ Future<Map<String, dynamic>> initiatePayment(
     return {'success': false, 'error': _errorMessage(res, 'Failed to load terms')};
   }
 
-  Future<Map<String, dynamic>> getAssessmentTypes(int academicYearId) async {
+  /// ✅ [grade] is optional so existing callers keep working unchanged.
+  /// When provided, the backend returns only assessment types registered
+  /// for that grade plus ones marked "all grades" — assessment types are
+  /// now class(grade)-based, so a Grade 1 teacher no longer sees a Grade
+  /// 10-only assessment type (like "Final Exam") in their picker.
+  Future<Map<String, dynamic>> getAssessmentTypes(int academicYearId, {int? grade}) async {
+    final gradeParam = grade != null ? '&grade=$grade' : '';
     final res = await NativeHttpClient.get(
-      '$_base/assessment-types/?academic_year_id=$academicYearId',
+      '$_base/assessment-types/?academic_year_id=$academicYearId$gradeParam',
       headers: await _headers,
     );
     debugPrint('[ApiService] getAssessmentTypes → ${res.statusCode}');

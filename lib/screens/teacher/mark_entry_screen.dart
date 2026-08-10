@@ -67,7 +67,7 @@ class _MarkEntryScreenState extends State<MarkEntryScreen> {
     }
     setState(() { _isLoadingAssessments = true; _error = null; });
     try {
-      final response = await _apiService.getAssessmentTypes(widget.academicYearId!);
+      final response = await _apiService.getAssessmentTypes(widget.academicYearId!, grade: widget.grade);
       if (response['success'] == true) {
         final list = response['data'] as List;
         setState(() {
