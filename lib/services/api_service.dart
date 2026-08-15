@@ -186,6 +186,33 @@ Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
   };
 }
 
+// ✅ NEW — Jimma request #4 (part 1): "my child's record" — daily
+// attendance, subject attendance, and accepted marks in one call, for
+// the parent-facing attendance/marks screen. Mirrors getPendingPayments'
+// shape exactly (same auth/header handling, same success/error envelope).
+Future<Map<String, dynamic>> getChildRecord(dynamic studentDbId) async {
+  if (_authToken == null) await getParentSession();
+  final h = await _headers;
+
+  final res = await NativeHttpClient.get(
+    '$_base/students/$studentDbId/child_record/',
+    headers: h,
+  );
+  debugPrint('[ApiService] child_record → ${res.statusCode}');
+
+  if (res.isSuccess) {
+    if (res.json is Map<String, dynamic>) {
+      return {'success': true, 'data': res.json};
+    }
+    return {'success': false, 'error': 'Unexpected response format'};
+  }
+
+  return {
+    'success': false,
+    'error': 'Failed to load attendance/marks (${res.statusCode})',
+  };
+}
+
 Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
   if (_authToken == null) await getParentSession();
   final h = await _headers;
