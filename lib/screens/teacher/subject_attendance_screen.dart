@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../services/api_service.dart';
 import '../../services/language_service.dart';
+import '../../widgets/attendance_summary_panel.dart';
 
 /// Subject-teacher period attendance — 'was this student in today's Math
 /// class' — a different question from homeroom's daily attendance
@@ -34,6 +35,10 @@ class _SubjectAttendanceScreenState extends State<SubjectAttendanceScreen> {
   String? _error;
   List<dynamic> _students = [];
   final Map<int, String> _statuses = {};
+
+  // ✅ NEW — parity with web TeacherSubjectAttendance.js's Take
+  // Attendance / Summary tabs.
+  String _view = 'entry'; // 'entry' | 'summary'
 
   static const _statusOptions = ['present', 'absent', 'late', 'excused'];
 
@@ -123,10 +128,26 @@ class _SubjectAttendanceScreenState extends State<SubjectAttendanceScreen> {
         backgroundColor: Colors.indigo.shade700,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(icon: const Icon(Icons.calendar_today), onPressed: _pickDate),
+          IconButton(
+            icon: Icon(_view == 'entry' ? Icons.bar_chart : Icons.edit_calendar),
+            tooltip: _view == 'entry' ? lang.t('teacher_attendance_summary') : lang.t('teacher_take_attendance'),
+            onPressed: () => setState(() => _view = _view == 'entry' ? 'summary' : 'entry'),
+          ),
+          if (_view == 'entry')
+            IconButton(icon: const Icon(Icons.calendar_today), onPressed: _pickDate),
         ],
       ),
-      body: Column(
+      body: _view == 'summary'
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: AttendanceSummaryPanel(
+                fetchRecords: (dateFrom, dateTo) => _apiService.getSubjectAttendanceSummaryRecords(
+                  subjectId: widget.subjectId, grade: widget.grade, section: widget.section,
+                  dateFrom: dateFrom, dateTo: dateTo,
+                ),
+              ),
+            )
+          : Column(
         children: [
           Container(
             width: double.infinity,

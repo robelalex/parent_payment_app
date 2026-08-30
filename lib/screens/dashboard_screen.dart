@@ -10,6 +10,7 @@ import 'bank_transfer_modal.dart';
 import 'upload_slip_modal.dart';
 import 'chapa_webview_screen.dart';
 import 'child_record_screen.dart';
+import 'report_cards_screen.dart';
 import '../utils/media_url.dart';
 import 'dart:convert';
 
@@ -393,6 +394,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _buildContactInfoCard(),
               const SizedBox(height: 16),
               _buildChildRecordCard(),
+              const SizedBox(height: 16),
+              _buildReportCardsCard(),
               const SizedBox(height: 24),
               if (_pendingPayments.isNotEmpty) ...[
                 Row(
@@ -720,6 +723,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(width: 12),
               const Expanded(
                 child: Text('Attendance & Marks',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW — parity with web ParentDashboard.js's Report Cards section.
+  // Same tappable-card styling as _buildChildRecordCard above.
+  Widget _buildReportCardsCard() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () {
+        if (_student == null) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ReportCardsScreen(
+              studentDbId: widget.studentId,
+              studentName: _student!.fullName,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.grey.shade200,
+                blurRadius: 8,
+                offset: const Offset(0, 2))
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: Colors.indigo.shade50,
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.description,
+                    size: 20, color: Colors.indigo),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Report Cards',
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w600)),
               ),

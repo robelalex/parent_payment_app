@@ -147,6 +147,28 @@ class ApiService {
     }
   }
 
+  // ─── Parent: report cards ───────────────────────────────────────────────
+  // ✅ NEW — parity with web ParentDashboard.js's report-card section.
+  // Only ever returns released report cards for this one child (enforced
+  // server-side by ReportCardViewSet.get_queryset's parent-scoping), same
+  // as every other parent-facing endpoint here.
+  Future<Map<String, dynamic>> getReportCards(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final res = await NativeHttpClient.get(
+      '$_base/report-cards/?student_id=$studentDbId&status=released',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getReportCards → ${res.statusCode}');
+    if (res.isSuccess) {
+      if (res.json is List) return {'success': true, 'data': res.json};
+      return {'success': true, 'data': []};
+    }
+    return {
+      'success': false,
+      'error': _errorMessage(res, 'Failed to load report cards'),
+    };
+  }
+
   // ─── School ───────────────────────────────────────────────────────────────
 
   Future<void> saveSchoolId(dynamic school) async {
@@ -446,6 +468,86 @@ Future<Map<String, dynamic>> initiatePayment(
     return {'success': false, 'error': _errorMessage(res, 'Failed to load subjects for this class')};
   }
 
+  // ─── Teacher: school info & semesters (Item 7 — quarter/semester) ───────
+  // ✅ NEW — parity with web teacherApi.js's getSchoolInfo/getSemesters.
+  // Only used to decide whether the Quarter/Semester toggle should show
+  // on the Class Results screen; a semester-structure school (the
+  // default) never sees it, exactly like the web app.
+
+  Future<Map<String, dynamic>> getSchoolInfo() async {
+    final res = await NativeHttpClient.get('$_base/schools/', headers: await _headers);
+    debugPrint('[ApiService] getSchoolInfo → ${res.statusCode}');
+    if (res.isSuccess) {
+      final data = res.json;
+      final school = data is List ? (data.isNotEmpty ? data.first : null) : data;
+      return {'success': true, 'data': school};
+    }
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load school info')};
+  }
+
+  Future<Map<String, dynamic>> getSemesters(int academicYearId) async {
+    final res = await NativeHttpClient.get(
+      '$_base/semesters/?academic_year_id=$academicYearId',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getSemesters → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load semesters')};
+  }
+
+  // ─── Teacher: class results & ranking ("Check Result and Award") ────────
+  // ✅ NEW — parity with web TeacherClassResults.js / teacherApi.js. Excel
+  // export is deliberately NOT included here — see note in
+  // class_results_screen.dart for why.
+
+  Future<Map<String, dynamic>> getClassResults({
+    required int termId, required int grade, String section = '',
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/results/class_results/?term_id=$termId&grade=$grade&section=$section',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getClassResults → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load results')};
+  }
+
+  Future<Map<String, dynamic>> getClassResultsByTerms({
+    required int grade, String section = '', required int academicYearId,
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/results/class_results_terms/?grade=$grade&section=$section&academic_year_id=$academicYearId',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getClassResultsByTerms → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load results')};
+  }
+
+  Future<Map<String, dynamic>> getClassResultsBySemesters({
+    required int grade, String section = '', required int academicYearId,
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/semester-results/class_results_semesters/?grade=$grade&section=$section&academic_year_id=$academicYearId',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getClassResultsBySemesters → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load results')};
+  }
+
+  Future<Map<String, dynamic>> getClassResultsBySemester({
+    required int semesterId, required int grade, String section = '',
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/semester-results/class_results/?semester_id=$semesterId&grade=$grade&section=$section',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getClassResultsBySemester → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load results')};
+  }
+
   // ─── Teacher: marks ─────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getMarkRoster({
@@ -575,6 +677,39 @@ Future<Map<String, dynamic>> initiatePayment(
     debugPrint('[ApiService] saveSubjectAttendance → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
     return {'success': false, 'error': _errorMessage(res, 'Failed to save attendance')};
+  }
+
+  // ─── Attendance summary (date range) ────────────────────────────────────
+  // ✅ NEW — parity with web's AttendanceSummaryPanel (TeacherAttendance.js
+  // / TeacherSubjectAttendance.js). Reuses the same list endpoints the
+  // roster screens already call, just with date_from/date_to instead of a
+  // single date — the backend scopes both to the teacher's own class(es),
+  // same as the roster endpoints. Grouping into per-student present/
+  // absent/late/excused counts happens client-side, mirroring the web.
+
+  Future<Map<String, dynamic>> getAttendanceSummaryRecords({
+    required int grade, required String section, required String dateFrom, required String dateTo,
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/attendance/?grade=$grade&section=$section&date_from=$dateFrom&date_to=$dateTo',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getAttendanceSummaryRecords → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load attendance summary')};
+  }
+
+  Future<Map<String, dynamic>> getSubjectAttendanceSummaryRecords({
+    required int subjectId, required int grade, required String section,
+    required String dateFrom, required String dateTo,
+  }) async {
+    final res = await NativeHttpClient.get(
+      '$_base/subject-attendance/?subject_id=$subjectId&grade=$grade&section=$section&date_from=$dateFrom&date_to=$dateTo',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getSubjectAttendanceSummaryRecords → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
+    return {'success': false, 'error': _errorMessage(res, 'Failed to load attendance summary')};
   }
 
   /// Same public polling endpoint the web uses after an upload.

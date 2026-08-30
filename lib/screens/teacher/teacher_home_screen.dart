@@ -8,6 +8,7 @@ import '../login_screen.dart';
 import 'gradebook_screen.dart';
 import 'attendance_screen.dart';
 import 'subject_attendance_screen.dart';
+import 'class_results_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -212,6 +213,24 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: OutlinedButton.icon(
+                                    icon: const Icon(Icons.emoji_events),
+                                    label: Text(lang.t('teacher_class_results')),
+                                    onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ClassResultsScreen(
+                                          grade: homeroom['grade'],
+                                          section: homeroom['section'],
+                                          academicYearId: _data?['current_academic_year_id'],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),

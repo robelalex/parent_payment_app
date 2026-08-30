@@ -50,6 +50,8 @@ const Map<String, Map<String, String>> appStrings = {
     'teacher_attendance_absent': 'Absent',
     'teacher_attendance_late': 'Late',
     'teacher_attendance_excused': 'Excused',
+    'teacher_class_results': 'Class Results & Ranking',
+    'teacher_attendance_summary': 'Attendance Summary',
   },
   'am': {
     'app_title': 'የወላጅ መግቢያ',
@@ -92,6 +94,10 @@ const Map<String, Map<String, String>> appStrings = {
     'teacher_attendance_absent': 'ቀሪ',
     'teacher_attendance_late': 'የዘገየ',
     'teacher_attendance_excused': 'የተፈቀደ',
+    // ⚠️ Best-effort translation, not verified by a native speaker —
+    // please check before relying on it.
+    'teacher_class_results': 'የክፍል ውጤት እና ደረጃ',
+    'teacher_attendance_summary': 'የክትትል ማጠቃለያ',
   },
   'om': {
     'app_title': 'Portaalii Warraa',
@@ -134,5 +140,9 @@ const Map<String, Map<String, String>> appStrings = {
     'teacher_attendance_absent': 'Hin Argamne',
     'teacher_attendance_late': 'Tureera',
     'teacher_attendance_excused': 'Hayyamameera',
+    // ⚠️ Best-effort translation, not verified by a native speaker —
+    // please check before relying on it.
+    'teacher_class_results': 'Bu\'aa fi Sadarkaa Kutaa',
+    'teacher_attendance_summary': 'Cuunfaa Hordoffii',
   },
 };
