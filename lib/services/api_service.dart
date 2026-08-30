@@ -1,9 +1,33 @@
+// lib/services/api_service.dart
+//
+// ✅ FIX APPLIED: ApiService is now a singleton (see the factory
+// constructor right below the class declaration). Previously every
+// screen did `final _apiService = ApiService();`, which created a
+// brand-new object with its own empty _authToken each time. Only the
+// login/OTP screens and the two "*Home*" screens (which reload the
+// token from SharedPreferences via getParentSession()/getTeacherSession())
+// ever populated that field — every other screen (Attendance, Gradebook,
+// Mark Entry, Homeroom Review, Subject Attendance, Class Results, Report
+// Cards, etc.) created its own token-less instance and sent requests
+// with no Authorization header, which the backend correctly rejected
+// with "Authentication credentials were not provided."
+//
+// The fix: `factory ApiService() => _instance;` makes every
+// `ApiService()` call anywhere in the app return the SAME object, so
+// once the token is set once (right after OTP verification, on either
+// the parent or teacher side), every screen sees it. No other code
+// changes needed — every existing `final _apiService = ApiService();`
+// line keeps working exactly as written.
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'native_http_client.dart';
 
 class ApiService {
+  ApiService._internal();
+  static final ApiService _instance = ApiService._internal();
+  factory ApiService() => _instance;
+
   static const String _base =
       'https://felege-selam-payment-system.onrender.com/api';
 
@@ -36,7 +60,7 @@ class ApiService {
     };
   }
 
-  // ─── Auth ─────────────────────────────────────────────────────────────────
+  // ─── Auth (parent) ───────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> sendOtp(String email) async {
     final res = await NativeHttpClient.post(
@@ -74,7 +98,7 @@ class ApiService {
     };
   }
 
-  // ─── Session ──────────────────────────────────────────────────────────────
+  // ─── Session (parent) ────────────────────────────────────────────────────
 
   Future<void> saveParentSession(String email, dynamic userId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -148,7 +172,6 @@ class ApiService {
   }
 
   // ─── Parent: report cards ───────────────────────────────────────────────
-  // ✅ NEW — parity with web ParentDashboard.js's report-card section.
   // Only ever returns released report cards for this one child (enforced
   // server-side by ReportCardViewSet.get_queryset's parent-scoping), same
   // as every other parent-facing endpoint here.
@@ -181,98 +204,92 @@ class ApiService {
 
   // ─── Payments ─────────────────────────────────────────────────────────────
 
-Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
-  if (_authToken == null) await getParentSession();
-  final h = await _headers;
-  debugPrint('[ApiService] getPendingPayments headers: $h');
-  debugPrint('[ApiService] Student DB ID: $studentDbId');
+  Future<Map<String, dynamic>> getPendingPayments(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final h = await _headers;
+    debugPrint('[ApiService] getPendingPayments headers: $h');
+    debugPrint('[ApiService] Student DB ID: $studentDbId');
 
-  // ✅ Direct call to grade-filtered endpoint
-  final res = await NativeHttpClient.get(
-    '$_base/students/$studentDbId/pending_payments/',
-    headers: h,
-  );
-  debugPrint('[ApiService] pending_payments response → ${res.statusCode}');
-  debugPrint('[ApiService] pending_payments body → ${res.body}');
+    final res = await NativeHttpClient.get(
+      '$_base/students/$studentDbId/pending_payments/',
+      headers: h,
+    );
+    debugPrint('[ApiService] pending_payments response → ${res.statusCode}');
+    debugPrint('[ApiService] pending_payments body → ${res.body}');
 
-  if (res.isSuccess) {
-    if (res.json is List) {
-      return {'success': true, 'data': res.json};
+    if (res.isSuccess) {
+      if (res.json is List) {
+        return {'success': true, 'data': res.json};
+      }
+      return {'success': true, 'data': []};
     }
-    return {'success': true, 'data': []};
-  }
-  
-  return {
-    'success': false,
-    'error': 'Failed to load payments (${res.statusCode})',
-  };
-}
 
-// ✅ NEW — Jimma request #4 (part 1): "my child's record" — daily
-// attendance, subject attendance, and accepted marks in one call, for
-// the parent-facing attendance/marks screen. Mirrors getPendingPayments'
-// shape exactly (same auth/header handling, same success/error envelope).
-Future<Map<String, dynamic>> getChildRecord(dynamic studentDbId) async {
-  if (_authToken == null) await getParentSession();
-  final h = await _headers;
-
-  final res = await NativeHttpClient.get(
-    '$_base/students/$studentDbId/child_record/',
-    headers: h,
-  );
-  debugPrint('[ApiService] child_record → ${res.statusCode}');
-
-  if (res.isSuccess) {
-    if (res.json is Map<String, dynamic>) {
-      return {'success': true, 'data': res.json};
-    }
-    return {'success': false, 'error': 'Unexpected response format'};
+    return {
+      'success': false,
+      'error': 'Failed to load payments (${res.statusCode})',
+    };
   }
 
-  return {
-    'success': false,
-    'error': 'Failed to load attendance/marks (${res.statusCode})',
-  };
-}
+  Future<Map<String, dynamic>> getChildRecord(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final h = await _headers;
 
-Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
-  if (_authToken == null) await getParentSession();
-  final h = await _headers;
+    final res = await NativeHttpClient.get(
+      '$_base/students/$studentDbId/child_record/',
+      headers: h,
+    );
+    debugPrint('[ApiService] child_record → ${res.statusCode}');
 
-  final res = await NativeHttpClient.get(
-    '$_base/students/$studentDbId/payment_history/',
-    headers: h,
-  );
-  debugPrint('[ApiService] payment_history → ${res.statusCode}');
-
-  if (res.isSuccess) {
-    if (res.json is List) {
-      return {'success': true, 'data': res.json};
+    if (res.isSuccess) {
+      if (res.json is Map<String, dynamic>) {
+        return {'success': true, 'data': res.json};
+      }
+      return {'success': false, 'error': 'Unexpected response format'};
     }
-    return {'success': true, 'data': []};
-  }
-  
-  return {
-    'success': false,
-    'error': 'Failed to load payment history (${res.statusCode})',
-  };
-}
 
-Future<Map<String, dynamic>> initiatePayment(
-    Map<String, dynamic> payload) async {
-  if (_authToken == null) await getParentSession();
-  
-  // ✅ ADD platform for mobile
-  final mobilePayload = {
-    ...payload,
-    'platform': 'mobile',
-  };
-  
-  final res = await NativeHttpClient.post(
-    '$_base/chapa/test-payment/',
-    headers: await _headers,
-    body: mobilePayload,
-  );
+    return {
+      'success': false,
+      'error': 'Failed to load attendance/marks (${res.statusCode})',
+    };
+  }
+
+  Future<Map<String, dynamic>> getPaymentHistory(dynamic studentDbId) async {
+    if (_authToken == null) await getParentSession();
+    final h = await _headers;
+
+    final res = await NativeHttpClient.get(
+      '$_base/students/$studentDbId/payment_history/',
+      headers: h,
+    );
+    debugPrint('[ApiService] payment_history → ${res.statusCode}');
+
+    if (res.isSuccess) {
+      if (res.json is List) {
+        return {'success': true, 'data': res.json};
+      }
+      return {'success': true, 'data': []};
+    }
+
+    return {
+      'success': false,
+      'error': 'Failed to load payment history (${res.statusCode})',
+    };
+  }
+
+  Future<Map<String, dynamic>> initiatePayment(
+      Map<String, dynamic> payload) async {
+    if (_authToken == null) await getParentSession();
+
+    final mobilePayload = {
+      ...payload,
+      'platform': 'mobile',
+    };
+
+    final res = await NativeHttpClient.post(
+      '$_base/chapa/test-payment/',
+      headers: await _headers,
+      body: mobilePayload,
+    );
     debugPrint('[ApiService] initiatePayment → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
     return {
@@ -291,7 +308,7 @@ Future<Map<String, dynamic>> initiatePayment(
     );
     debugPrint('[ApiService] verifyPayment → ${res.statusCode}');
     debugPrint('[ApiService] verifyPayment response → ${res.body}');
-    
+
     if (res.isSuccess) {
       final data = _map(res.json) ?? {};
       return {'success': true, ...data};
@@ -325,6 +342,17 @@ Future<Map<String, dynamic>> initiatePayment(
     return {'success': false, 'error': _errorMessage(res, 'Receipt not found')};
   }
 
+  /// Same public polling endpoint the web uses after an upload.
+  Future<Map<String, dynamic>> getSlipStatus(int slipId) async {
+    final res = await NativeHttpClient.get(
+      '$_base/slips/$slipId/status/',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getSlipStatus → ${res.statusCode}');
+    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
+    return {'success': false, 'error': _errorMessage(res, 'Could not check slip status')};
+  }
+
   // ─── Teacher Auth ─────────────────────────────────────────────────────────
   // Teachers use the same email+password+OTP flow as the web admin panel
   // (StaffMemberViewSet.create_login sets them up for it already) — no
@@ -353,8 +381,7 @@ Future<Map<String, dynamic>> initiatePayment(
     debugPrint('[ApiService] verifyTeacherOtp → ${res.statusCode}');
     if (res.isSuccess) {
       final data = _map(res.json) ?? {};
-      // ✅ This endpoint returns 'access', not 'token' (JWT via simplejwt) —
-      // different field name than the parent OTP flow, same mechanism.
+      // ✅ This endpoint returns 'access', not 'token' (JWT via simplejwt).
       if (data['access'] != null) setAuthToken(data['access'] as String);
       if (data['user']?['school']?['id'] != null) {
         _schoolId = data['user']['school']['id'].toString();
@@ -412,11 +439,9 @@ Future<Map<String, dynamic>> initiatePayment(
     return {'success': false, 'error': _errorMessage(res, 'Failed to load terms')};
   }
 
-  /// ✅ [grade] is optional so existing callers keep working unchanged.
-  /// When provided, the backend returns only assessment types registered
-  /// for that grade plus ones marked "all grades" — assessment types are
-  /// now class(grade)-based, so a Grade 1 teacher no longer sees a Grade
-  /// 10-only assessment type (like "Final Exam") in their picker.
+  /// [grade] is optional — when provided, the backend returns only
+  /// assessment types registered for that grade plus ones marked "all
+  /// grades" (assessment types are class(grade)-based).
   Future<Map<String, dynamic>> getAssessmentTypes(int academicYearId, {int? grade}) async {
     final gradeParam = grade != null ? '&grade=$grade' : '';
     final res = await NativeHttpClient.get(
@@ -469,7 +494,6 @@ Future<Map<String, dynamic>> initiatePayment(
   }
 
   // ─── Teacher: school info & semesters (Item 7 — quarter/semester) ───────
-  // ✅ NEW — parity with web teacherApi.js's getSchoolInfo/getSemesters.
   // Only used to decide whether the Quarter/Semester toggle should show
   // on the Class Results screen; a semester-structure school (the
   // default) never sees it, exactly like the web app.
@@ -496,8 +520,7 @@ Future<Map<String, dynamic>> initiatePayment(
   }
 
   // ─── Teacher: class results & ranking ("Check Result and Award") ────────
-  // ✅ NEW — parity with web TeacherClassResults.js / teacherApi.js. Excel
-  // export is deliberately NOT included here — see note in
+  // Excel export is deliberately NOT included here — see the note in
   // class_results_screen.dart for why.
 
   Future<Map<String, dynamic>> getClassResults({
@@ -680,12 +703,11 @@ Future<Map<String, dynamic>> initiatePayment(
   }
 
   // ─── Attendance summary (date range) ────────────────────────────────────
-  // ✅ NEW — parity with web's AttendanceSummaryPanel (TeacherAttendance.js
-  // / TeacherSubjectAttendance.js). Reuses the same list endpoints the
-  // roster screens already call, just with date_from/date_to instead of a
-  // single date — the backend scopes both to the teacher's own class(es),
-  // same as the roster endpoints. Grouping into per-student present/
-  // absent/late/excused counts happens client-side, mirroring the web.
+  // Reuses the same list endpoints the roster screens already call, just
+  // with date_from/date_to instead of a single date — the backend scopes
+  // both to the teacher's own class(es), same as the roster endpoints.
+  // Grouping into per-student present/absent/late/excused counts happens
+  // client-side, mirroring the web.
 
   Future<Map<String, dynamic>> getAttendanceSummaryRecords({
     required int grade, required String section, required String dateFrom, required String dateTo,
@@ -710,17 +732,6 @@ Future<Map<String, dynamic>> initiatePayment(
     debugPrint('[ApiService] getSubjectAttendanceSummaryRecords → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, 'data': res.json ?? []};
     return {'success': false, 'error': _errorMessage(res, 'Failed to load attendance summary')};
-  }
-
-  /// Same public polling endpoint the web uses after an upload.
-  Future<Map<String, dynamic>> getSlipStatus(int slipId) async {
-    final res = await NativeHttpClient.get(
-      '$_base/slips/$slipId/status/',
-      headers: await _headers,
-    );
-    debugPrint('[ApiService] getSlipStatus → ${res.statusCode}');
-    if (res.isSuccess) return {'success': true, ...?_map(res.json)};
-    return {'success': false, 'error': _errorMessage(res, 'Could not check slip status')};
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────
