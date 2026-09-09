@@ -29,7 +29,8 @@ jobs:
         run: flutter pub get
 
       - name: Make gradlew executable
-        run: chmod +x android/gradlew
+        working-directory: android
+        run: chmod +x gradlew
 
       - name: Build APK via Gradle directly
         working-directory: android
