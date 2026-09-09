@@ -4,10 +4,13 @@ import '../services/api_service.dart';
 import 'enter_student_id_screen.dart';
 
 class OtpScreen extends StatefulWidget {
-  final String email;
+  // ✅ NEW (requested): renamed from `email` to `identifier` since this
+  // can now be either an email or a phone number — `method` says which.
+  final String identifier;
+  final String method; // 'email' or 'phone'
   final int userId;
-  
-  const OtpScreen({super.key, required this.email, required this.userId});
+
+  const OtpScreen({super.key, required this.identifier, required this.method, required this.userId});
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -50,7 +53,7 @@ class _OtpScreenState extends State<OtpScreen> {
     try {
       final response = await _apiService.verifyOtp(widget.userId, _otpController.text);
       if (response['success'] == true) {
-        await _apiService.saveParentSession(widget.email, widget.userId);
+        await _apiService.saveParentSession(widget.identifier, widget.userId);
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -73,7 +76,9 @@ class _OtpScreenState extends State<OtpScreen> {
     setState(() { _isLoading = true; _error = null; });
 
     try {
-      final response = await _apiService.sendOtp(widget.email);
+      final response = widget.method == 'phone'
+          ? await _apiService.sendOtp(phone: widget.identifier)
+          : await _apiService.sendOtp(email: widget.identifier);
       if (response['success'] == true) {
         _startResendTimer();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -114,7 +119,7 @@ class _OtpScreenState extends State<OtpScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Enter 6-digit code sent to ${widget.email}',
+                  'Enter 6-digit code sent to ${widget.identifier}',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
@@ -185,7 +190,7 @@ class _OtpScreenState extends State<OtpScreen> {
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('← Back to email'),
+                  child: const Text('← Back'),
                 ),
               ],
             ),

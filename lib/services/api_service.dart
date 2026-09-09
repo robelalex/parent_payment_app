@@ -62,11 +62,16 @@ class ApiService {
 
   // ─── Auth (parent) ───────────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> sendOtp(String email) async {
+  // ✅ NEW (requested): phone as an alternative to email — email delivery
+  // isn't reliable in some areas, so a parent can log in with their
+  // phone number instead and get the code by SMS. Backend already
+  // accepts either field (see parent_login_step1) — this just exposes
+  // that choice here. Exactly one of email/phone should be passed.
+  Future<Map<String, dynamic>> sendOtp({String? email, String? phone}) async {
     final res = await NativeHttpClient.post(
       '$_base/parent/send-otp/',
       headers: await _headers,
-      body: {'email': email},
+      body: phone != null ? {'phone': phone} : {'email': email},
     );
     debugPrint('[ApiService] sendOtp → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};
@@ -358,11 +363,15 @@ class ApiService {
   // (StaffMemberViewSet.create_login sets them up for it already) — no
   // separate backend auth system needed.
 
-  Future<Map<String, dynamic>> teacherLogin(String email, String password) async {
+  // ✅ NEW (requested): same email-or-phone choice as the parent login
+  // above. Password is always required either way — this only changes
+  // which field identifies the account and which channel the OTP goes
+  // through (see admin_login_step1 on the backend).
+  Future<Map<String, dynamic>> teacherLogin({String? email, String? phone, required String password}) async {
     final res = await NativeHttpClient.post(
       '$_base/login/',
       headers: await _headers,
-      body: {'email': email, 'password': password},
+      body: phone != null ? {'phone': phone, 'password': password} : {'email': email, 'password': password},
     );
     debugPrint('[ApiService] teacherLogin → ${res.statusCode}');
     if (res.isSuccess) return {'success': true, ...?_map(res.json)};

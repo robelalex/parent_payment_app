@@ -16,29 +16,41 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _apiService = ApiService();
   bool _isLoading = false;
   String? _error;
+  // ✅ NEW (requested): email or phone as the login identifier — email
+  // delivery isn't reliable everywhere, so a parent can log in with
+  // their phone number instead and get the code by SMS.
+  String _method = 'email';
 
   Future<void> _sendOtp() async {
     final lang = context.read<LanguageService>();
 
-    if (!_emailController.text.contains('@')) {
+    if (_method == 'email' && !_emailController.text.contains('@')) {
       setState(() => _error = lang.t('login_invalid_email'));
+      return;
+    }
+    if (_method == 'phone' && _phoneController.text.trim().isEmpty) {
+      setState(() => _error = 'Enter your phone number');
       return;
     }
 
     setState(() { _isLoading = true; _error = null; });
 
     try {
-      final response = await _apiService.sendOtp(_emailController.text);
+      final response = _method == 'phone'
+          ? await _apiService.sendOtp(phone: _phoneController.text.trim())
+          : await _apiService.sendOtp(email: _emailController.text.trim());
       if (response['success'] == true) {
         if (mounted) {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => OtpScreen(
-                email: _emailController.text,
+                identifier: _method == 'phone' ? _phoneController.text.trim() : _emailController.text.trim(),
+                method: _method,
                 userId: response['user_id'],
               ),
             ),
@@ -92,17 +104,60 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 40),
-                TextField(
-                  controller: _emailController,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.email),
-                    labelText: lang.t('login_email_label'),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                // ✅ NEW: Email / Phone toggle
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() => _method = 'email'),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _method == 'email' ? Colors.green.shade700 : Colors.white,
+                          foregroundColor: _method == 'email' ? Colors.white : Colors.grey.shade700,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Email'),
+                      ),
                     ),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() => _method = 'phone'),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _method == 'phone' ? Colors.green.shade700 : Colors.white,
+                          foregroundColor: _method == 'phone' ? Colors.white : Colors.grey.shade700,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Phone'),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 20),
+                if (_method == 'phone')
+                  TextField(
+                    controller: _phoneController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.phone),
+                      labelText: 'Phone Number',
+                      hintText: '09XXXXXXXX',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    keyboardType: TextInputType.phone,
+                  )
+                else
+                  TextField(
+                    controller: _emailController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.email),
+                      labelText: lang.t('login_email_label'),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
                 const SizedBox(height: 20),
                 if (_error != null)
                   Container(

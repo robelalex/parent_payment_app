@@ -15,29 +15,45 @@ class TeacherLoginScreen extends StatefulWidget {
 
 class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _apiService = ApiService();
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _error;
+  // ✅ NEW (requested): email or phone as the login identifier, same
+  // toggle as the parent login screen. Password is always required
+  // either way.
+  String _method = 'email';
 
   Future<void> _login() async {
-    if (!_emailController.text.contains('@') || _passwordController.text.isEmpty) {
-      setState(() => _error = 'Enter your email and password');
+    if (_method == 'email' && !_emailController.text.contains('@')) {
+      setState(() => _error = 'Enter your email');
+      return;
+    }
+    if (_method == 'phone' && _phoneController.text.trim().isEmpty) {
+      setState(() => _error = 'Enter your phone number');
+      return;
+    }
+    if (_passwordController.text.isEmpty) {
+      setState(() => _error = 'Enter your password');
       return;
     }
 
     setState(() { _isLoading = true; _error = null; });
 
     try {
-      final response = await _apiService.teacherLogin(_emailController.text.trim(), _passwordController.text);
+      final response = _method == 'phone'
+          ? await _apiService.teacherLogin(phone: _phoneController.text.trim(), password: _passwordController.text)
+          : await _apiService.teacherLogin(email: _emailController.text.trim(), password: _passwordController.text);
       if (response['success'] == true && response['requires_otp'] == true) {
         if (mounted) {
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => TeacherOtpScreen(
-                email: _emailController.text.trim(),
+                identifier: _method == 'phone' ? _phoneController.text.trim() : _emailController.text.trim(),
+                method: _method,
                 userId: response['user_id'],
               ),
             ),
@@ -85,16 +101,57 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                   lang.t('teacher_login_title'),
                   style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 36),
-                TextField(
-                  controller: _emailController,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.email),
-                    labelText: lang.t('teacher_email_label'),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
+                const SizedBox(height: 28),
+                // ✅ NEW: Email / Phone toggle
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() => _method = 'email'),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _method == 'email' ? Colors.indigo.shade700 : Colors.white,
+                          foregroundColor: _method == 'email' ? Colors.white : Colors.grey.shade700,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Email'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() => _method = 'phone'),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _method == 'phone' ? Colors.indigo.shade700 : Colors.white,
+                          foregroundColor: _method == 'phone' ? Colors.white : Colors.grey.shade700,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Phone'),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 16),
+                if (_method == 'phone')
+                  TextField(
+                    controller: _phoneController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.phone),
+                      labelText: 'Phone Number',
+                      hintText: '09XXXXXXXX',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    keyboardType: TextInputType.phone,
+                  )
+                else
+                  TextField(
+                    controller: _emailController,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.email),
+                      labelText: lang.t('teacher_email_label'),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _passwordController,

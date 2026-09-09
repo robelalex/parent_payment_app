@@ -6,10 +6,13 @@ import '../../services/language_service.dart';
 import 'teacher_home_screen.dart';
 
 class TeacherOtpScreen extends StatefulWidget {
-  final String email;
+  // ✅ NEW (requested): renamed from `email` to `identifier` — can now
+  // be either an email or a phone number.
+  final String identifier;
+  final String method; // 'email' or 'phone'
   final int userId;
 
-  const TeacherOtpScreen({super.key, required this.email, required this.userId});
+  const TeacherOtpScreen({super.key, required this.identifier, required this.method, required this.userId});
 
   @override
   State<TeacherOtpScreen> createState() => _TeacherOtpScreenState();
@@ -73,7 +76,7 @@ class _TeacherOtpScreenState extends State<TeacherOtpScreen> {
                 const Text('Verify Your Identity', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 10),
                 Text(
-                  'Enter the 6-digit code sent to ${widget.email}',
+                  'Enter the 6-digit code sent to ${widget.identifier}',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey.shade600),
                 ),
