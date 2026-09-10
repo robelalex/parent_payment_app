@@ -48,14 +48,22 @@ class _EnterStudentIdScreenState extends State<EnterStudentIdScreen> {
         return;
       }
 
-      if (result['id'] != null && result['parent_email'] != null) {
-        final session = await _apiService.getParentSession();
-
-        if (session == null || result['parent_email'] != session['email']) {
-          setState(() => _error = 'This student ID is not linked to your email');
-          setState(() => _isLoading = false);
-          return;
-        }
+      if (result['id'] != null) {
+        // ✅ FIX: the backend (search_by_id + IsParentOfStudentOrCanManage)
+        // already verifies server-side that the logged-in parent owns this
+        // student — matching by email OR phone, whichever they logged in
+        // with. If that check fails, the server returns 404/error and we
+        // never get here at all (handled above).
+        //
+        // The old code repeated this check on the client by comparing
+        // result['parent_email'] to session['email']. But saveParentSession
+        // stores whichever identifier was used to log in (phone OR email)
+        // under the same 'parent_email' key. So a parent who logged in by
+        // PHONE had their phone number sitting in session['email'], which
+        // could never equal the student's actual parent_email — so this
+        // comparison always failed and blocked every phone-login parent
+        // from their own, correctly-linked child. Removed; the server
+        // check above is the real, trustworthy source of truth.
 
         if (result['school'] != null) {
           await _apiService.saveSchoolId(result['school']);

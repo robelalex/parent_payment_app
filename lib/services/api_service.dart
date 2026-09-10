@@ -347,6 +347,26 @@ class ApiService {
     return {'success': false, 'error': _errorMessage(res, 'Receipt not found')};
   }
 
+  /// Same public endpoint the web's UploadSlipModal.js uses to let the
+  /// parent pick which of the school's bank accounts they paid into.
+  Future<Map<String, dynamic>> getBankAccounts() async {
+    final res = await NativeHttpClient.get(
+      '$_base/bank-accounts/',
+      headers: await _headers,
+    );
+    debugPrint('[ApiService] getBankAccounts → ${res.statusCode}');
+    if (res.isSuccess) {
+      final decoded = _map(res.json);
+      final list = (decoded?['results'] ?? decoded ?? res.json) as dynamic;
+      final accounts = (list is List ? list : <dynamic>[])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      return {'success': true, 'accounts': accounts};
+    }
+    return {'success': false, 'error': _errorMessage(res, 'Could not load bank accounts'), 'accounts': <Map<String, dynamic>>[]};
+  }
+
   /// Same public polling endpoint the web uses after an upload.
   Future<Map<String, dynamic>> getSlipStatus(int slipId) async {
     final res = await NativeHttpClient.get(

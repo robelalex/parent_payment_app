@@ -31,9 +31,20 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
   static const _hostname = 'felege-selam-payment-system.onrender.com';
   final _apiService = ApiService();
 
-  final _bankNameController = TextEditingController();
-  final _amountController = TextEditingController();
-  final _transactionDateController = TextEditingController();
+  // ✅ NEW (requested): matches the web's UploadSlipModal.js exactly —
+  // a bank account picker (so the parent can see/confirm which school
+  // account they paid into) and a transaction reference field that's
+  // auto-filled by the same AI slip-reading endpoint the web uses.
+  // Amount is no longer editable — same as web, it's fixed from the
+  // deadline, not something the parent can change.
+  final _transactionReferenceController = TextEditingController();
+  List<Map<String, dynamic>> _bankAccounts = [];
+  String? _selectedBankAccountId; // null = 'auto', let the backend's own OCR detect it
+  bool _loadingBankAccounts = true;
+  bool _extracting = false;
+  bool _aiDetected = false;
+  bool _showManualInput = false;
+
   Uint8List? _imageBytes;
   bool _isLoading = false;
   String? _error;
@@ -56,16 +67,31 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
   @override
   void initState() {
     super.initState();
-    _amountController.text = widget.payment.amount.toString();
+    _loadBankAccounts();
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _bankNameController.dispose();
-    _amountController.dispose();
-    _transactionDateController.dispose();
+    _transactionReferenceController.dispose();
     super.dispose();
+  }
+
+  // ✅ NEW: same call the web makes on mount — lets the parent see and
+  // confirm which of the school's real bank accounts they sent money to.
+  Future<void> _loadBankAccounts() async {
+    final result = await _apiService.getBankAccounts();
+    if (!mounted) return;
+    final accounts = (result['accounts'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    Map<String, dynamic>? primary;
+    for (final acc in accounts) {
+      if (acc['is_primary'] == true) { primary = acc; break; }
+    }
+    setState(() {
+      _bankAccounts = accounts;
+      _selectedBankAccountId = primary != null ? primary['id'].toString() : null;
+      _loadingBankAccounts = false;
+    });
   }
 
   Future<void> _pickImage() async {
@@ -76,16 +102,100 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
       );
       if (image != null) {
         final bytes = await image.readAsBytes();
-        setState(() => _imageBytes = bytes);
+        setState(() {
+          _imageBytes = bytes;
+          _transactionReferenceController.clear();
+          _aiDetected = false;
+          _showManualInput = false;
+          _error = null;
+        });
+        await _autoExtractFromImage(bytes);
       }
     } catch (e) {
       setState(() => _error = 'Failed to pick image: $e');
     }
   }
 
+  // ✅ NEW (requested): same AI slip-reading step the web does at
+  // /slips/extract-data/ — reads the transaction reference straight off
+  // the photo so the parent usually doesn't have to type anything.
+  // Built as a raw multipart platform-channel call, same technique
+  // already proven for the slip upload itself below, since this also
+  // needs to send an image file, not JSON.
+  Future<void> _autoExtractFromImage(Uint8List imageBytes) async {
+    setState(() { _extracting = true; _error = null; });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final schoolIdRaw = prefs.get('school_id');
+      final schoolId = schoolIdRaw?.toString().replaceAll('"', '') ?? '';
+
+      final boundary = '----FlutterBoundary${DateTime.now().millisecondsSinceEpoch}';
+      final List<int> bodyBytes = [];
+      bodyBytes.addAll(
+        '--$boundary\r\nContent-Disposition: form-data; name="slip_image"; '
+                'filename="slip_extract.jpg"\r\nContent-Type: image/jpeg\r\n\r\n'
+            .codeUnits,
+      );
+      bodyBytes.addAll(imageBytes);
+      bodyBytes.addAll('\r\n--$boundary--\r\n'.codeUnits);
+
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'POST',
+        {
+          'url': 'https://$_hostname/api/slips/extract-data/',
+          'headers': {
+            'Content-Type': 'multipart/form-data; boundary=$boundary',
+            if (schoolId.isNotEmpty) 'X-School-ID': schoolId,
+          },
+          'bodyBytes': bodyBytes,
+        },
+      );
+
+      final statusCode = result?['statusCode'] as int? ?? 0;
+      final responseBody = result?['body'] as String? ?? '';
+
+      if (statusCode == 200) {
+        final data = jsonDecode(responseBody);
+        final extracted = data['extracted'] as Map<String, dynamic>?;
+        final ref = extracted?['transaction_reference']?.toString();
+        if (data['success'] == true && ref != null && ref.isNotEmpty) {
+          setState(() {
+            _transactionReferenceController.text = ref;
+            _aiDetected = true;
+            _showManualInput = false;
+          });
+        } else {
+          setState(() {
+            _showManualInput = true;
+            _error = 'Could not detect reference number. Please enter it manually below.';
+          });
+        }
+      } else {
+        setState(() {
+          _showManualInput = true;
+          _error = 'Auto-detection failed. Please enter reference number manually.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _showManualInput = true;
+        _error = 'Auto-detection failed. Please enter reference number manually.';
+      });
+    } finally {
+      if (mounted) setState(() => _extracting = false);
+    }
+  }
+
   Future<void> _submitUpload() async {
     if (_imageBytes == null) {
       setState(() => _error = 'Please select a bank slip image');
+      return;
+    }
+    // ✅ NEW: required now, matching the web — a slip can't be submitted
+    // without a reference number, whether AI-filled or typed manually.
+    if (_transactionReferenceController.text.trim().isEmpty) {
+      setState(() => _error = 'Transaction reference is required');
       return;
     }
 
@@ -102,6 +212,20 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
         return;
       }
 
+      // ✅ NEW: resolve which bank account was picked, matching the
+      // web's exact logic — a real account sends its name + id, 'auto'
+      // (nothing picked) lets the backend's own OCR detect it instead.
+      String bankName = 'auto';
+      String? bankAccountId;
+      if (_selectedBankAccountId != null) {
+        final chosen = _bankAccounts.firstWhere(
+          (a) => a['id'].toString() == _selectedBankAccountId,
+          orElse: () => <String, dynamic>{},
+        );
+        bankName = chosen['bank_name']?.toString() ?? 'auto';
+        bankAccountId = _selectedBankAccountId;
+      }
+
       // Build multipart body manually and send via OkHttp platform channel
       final boundary = '----FlutterBoundary${DateTime.now().millisecondsSinceEpoch}';
       final List<int> bodyBytes = [];
@@ -115,12 +239,11 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
 
       addField('student_id', widget.student.studentId);
       addField('deadline_id', widget.payment.id.toString());
-      addField('amount', _amountController.text);
-      addField('bank_name', _bankNameController.text);
+      addField('amount', widget.payment.amount.toString());
+      addField('bank_name', bankName);
+      if (bankAccountId != null) addField('bank_account_id', bankAccountId);
+      addField('transaction_reference', _transactionReferenceController.text.trim());
       addField('uploaded_by', widget.student.fullName);
-      if (_transactionDateController.text.isNotEmpty) {
-        addField('transaction_date', _transactionDateController.text);
-      }
 
       // Add image part
       bodyBytes.addAll(
@@ -275,7 +398,7 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         width: double.infinity,
-        constraints: const BoxConstraints(maxWidth: 400),
+        constraints: const BoxConstraints(maxWidth: 400, maxHeight: 640),
         padding: const EdgeInsets.all(20),
         child: _success
             ? Column(
@@ -298,6 +421,20 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
                     _verificationMessage,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Ref: ${_transactionReferenceController.text}',
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   if (_verificationStatus == 'queued')
@@ -339,13 +476,77 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
                       ],
                     ),
                     const SizedBox(height: 20),
+                    // ✅ Student summary — amount now shown here as
+                    // read-only info, same as the web, not an editable
+                    // field, since it's fixed by the deadline.
                     _buildInfoRow('Student', widget.student.fullName),
                     _buildInfoRow('Student ID', widget.student.studentId),
-                    _buildInfoRow(
-                        'Month', widget.payment.monthName ?? 'N/A'),
+                    _buildInfoRow('Month', widget.payment.monthName ?? 'N/A'),
+                    _buildInfoRow('Amount', '${widget.payment.amount} Birr'),
                     const SizedBox(height: 16),
+
+                    // ✅ NEW: bank account picker — same as web, lets the
+                    // parent confirm which of the school's real accounts
+                    // they sent money to.
+                    if (_loadingBankAccounts)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    else if (_bankAccounts.isNotEmpty) ...[
+                      const Text('Which account did you pay into?',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      ..._bankAccounts.map((acc) {
+                        final id = acc['id'].toString();
+                        final selected = _selectedBankAccountId == id;
+                        return GestureDetector(
+                          onTap: () => setState(() => _selectedBankAccountId = id),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: selected ? Colors.indigo : Colors.grey.shade300,
+                                width: selected ? 1.5 : 1,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                              color: selected ? Colors.indigo.shade50 : null,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                  color: selected ? Colors.indigo : Colors.grey,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(acc['bank_name']?.toString() ?? '',
+                                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                                      Text(
+                                        '${acc['account_number'] ?? ''} · ${acc['account_holder'] ?? ''}',
+                                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFamily: 'monospace'),
+                                      ),
+                                      if ((acc['display_label']?.toString() ?? '').isNotEmpty)
+                                        Text('"${acc['display_label']}"',
+                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 8),
+                    ],
+
                     GestureDetector(
-                      onTap: _pickImage,
+                      onTap: _extracting ? null : _pickImage,
                       child: Container(
                         height: 120,
                         width: double.infinity,
@@ -354,65 +555,90 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.grey.shade300),
                         ),
-                        child: _imageBytes != null
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image.memory(_imageBytes!,
-                                    width: double.infinity,
-                                    fit: BoxFit.cover),
-                              )
-                            : Column(
+                        child: _extracting
+                            ? Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.camera_alt,
-                                      size: 32,
-                                      color: Colors.grey.shade400),
+                                  const SizedBox(
+                                    width: 24, height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
                                   const SizedBox(height: 8),
-                                  Text('Tap to upload slip image',
-                                      style: TextStyle(
-                                          color: Colors.grey.shade600)),
+                                  Text('Reading slip…', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                                 ],
-                              ),
+                              )
+                            : _imageBytes != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.memory(_imageBytes!,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover),
+                                  )
+                                : Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.camera_alt,
+                                          size: 32,
+                                          color: Colors.grey.shade400),
+                                      const SizedBox(height: 8),
+                                      Text('Tap to upload slip image',
+                                          style: TextStyle(
+                                              color: Colors.grey.shade600)),
+                                    ],
+                                  ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: _amountController,
-                      decoration: const InputDecoration(
-                        labelText: 'Amount (Birr)',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.number,
+
+                    // ✅ NEW: transaction reference field, AI-filled where
+                    // possible — the one field the web version always had
+                    // that this screen was missing entirely before.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Transaction Reference *',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        if (_aiDetected)
+                          Row(
+                            children: [
+                              Icon(Icons.auto_awesome, size: 12, color: Colors.green.shade600),
+                              const SizedBox(width: 3),
+                              Text('AI Detected',
+                                  style: TextStyle(fontSize: 11, color: Colors.green.shade600, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     TextField(
-                      controller: _bankNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Bank Name (Optional)',
-                        border: OutlineInputBorder(),
+                      controller: _transactionReferenceController,
+                      enabled: !_extracting,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.tag, size: 18),
+                        hintText: _extracting ? 'Detecting…' : 'e.g., FSPAY-FS-2019-0003-57-xxx',
+                        border: const OutlineInputBorder(),
+                        filled: _aiDetected,
+                        fillColor: _aiDetected ? Colors.green.shade50 : null,
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _transactionDateController,
-                      decoration: const InputDecoration(
-                        labelText: 'Transaction Date',
-                        border: OutlineInputBorder(),
+                    if (!_aiDetected && !_showManualInput && _imageBytes != null && !_extracting)
+                      TextButton.icon(
+                        onPressed: () => setState(() => _showManualInput = true),
+                        icon: const Icon(Icons.help_outline, size: 14),
+                        label: const Text("Can't see reference? Enter manually", style: TextStyle(fontSize: 12)),
                       ),
-                      readOnly: true,
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now(),
-                        );
-                        if (date != null) {
-                          _transactionDateController.text =
-                              '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-                        }
-                      },
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _aiDetected
+                            ? '✓ Found: "${_transactionReferenceController.text}". Please verify it matches your slip.'
+                            : _showManualInput
+                                ? 'Enter the reference number exactly as shown on your bank receipt.'
+                                : "We'll auto-detect this from your photo once you upload it.",
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      ),
                     ),
+
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       Container(
@@ -454,7 +680,7 @@ class _UploadSlipModalState extends State<UploadSlipModal> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: _isLoading ? null : _submitUpload,
+                            onPressed: (_isLoading || _extracting || _imageBytes == null) ? null : _submitUpload,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.indigo,
                               padding:
